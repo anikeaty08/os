@@ -1,10 +1,12 @@
 # AstraOS Makefile
 # x86_64 Hobby Operating System
 
-# Cross-compiler toolchain (adjust path as needed)
-CC := x86_64-elf-gcc
+# Toolchain - uses Linux gcc in freestanding mode
+# On Linux/WSL: uses system gcc
+# For true cross-compile: install x86_64-elf-gcc and change CC/LD
+CC := gcc
 AS := nasm
-LD := x86_64-elf-ld
+LD := ld
 
 # Compiler flags - CRITICAL for kernel development
 CFLAGS := -ffreestanding \

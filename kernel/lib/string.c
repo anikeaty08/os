@@ -239,6 +239,48 @@ char *strtok(char *str, const char *delim) {
 }
 
 /*
+ * strtok_r - Reentrant tokenize string
+ */
+char *strtok_r(char *str, const char *delim, char **saveptr) {
+    char *start;
+    char *end;
+
+    if (str) {
+        *saveptr = str;
+    }
+
+    if (!*saveptr || !**saveptr) {
+        return NULL;
+    }
+
+    /* Skip leading delimiters */
+    start = *saveptr;
+    while (*start && strchr(delim, *start)) {
+        start++;
+    }
+
+    if (!*start) {
+        *saveptr = NULL;
+        return NULL;
+    }
+
+    /* Find end of token */
+    end = start;
+    while (*end && !strchr(delim, *end)) {
+        end++;
+    }
+
+    if (*end) {
+        *end = '\0';
+        *saveptr = end + 1;
+    } else {
+        *saveptr = NULL;
+    }
+
+    return start;
+}
+
+/*
  * strcasecmp - Case-insensitive string comparison
  */
 static inline char tolower(char c) {

@@ -25,6 +25,7 @@ char *strchr(const char *s, int c);
 char *strrchr(const char *s, int c);
 char *strstr(const char *haystack, const char *needle);
 char *strtok(char *str, const char *delim);
+char *strtok_r(char *str, const char *delim, char **saveptr);
 
 /* Case-insensitive comparison */
 int strcasecmp(const char *s1, const char *s2);

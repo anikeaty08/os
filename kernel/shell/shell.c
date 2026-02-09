@@ -97,6 +97,12 @@ void shell_execute(const char *line) {
         cmd_version(argc, argv);
     } else if (strcmp(cmd, "test") == 0) {
         cmd_test(argc, argv);
+    } else if (strcmp(cmd, "ls") == 0 || strcmp(cmd, "dir") == 0) {
+        cmd_ls(argc, argv);
+    } else if (strcmp(cmd, "cat") == 0 || strcmp(cmd, "type") == 0) {
+        cmd_cat(argc, argv);
+    } else if (strcmp(cmd, "ps") == 0) {
+        cmd_ps(argc, argv);
     } else {
         kprintf("Unknown command: %s\n", cmd);
         kprintf("Type 'help' for available commands.\n");

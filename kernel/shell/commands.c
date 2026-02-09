@@ -11,6 +11,10 @@
 #include "../drivers/pit.h"
 #include "../arch/x86_64/cpu.h"
 #include "../arch/x86_64/io.h"
+#include "../drivers/acpi.h"
+#include "../fs/vfs.h"
+#include "../proc/process.h"
+#include "../proc/scheduler.h"
 
 /* External framebuffer functions */
 extern void fb_clear(void);
@@ -32,6 +36,9 @@ void cmd_help(int argc, char **argv) {
     kprintf("  cpuinfo   - Display CPU information\n");
     kprintf("  version   - Show AstraOS version\n");
     kprintf("  test      - Run system tests\n");
+    kprintf("  ls        - List directory contents\n");
+    kprintf("  cat       - Display file contents\n");
+    kprintf("  ps        - List processes\n");
     kprintf("  reboot    - Restart the system\n");
     kprintf("  shutdown  - Halt the system\n");
     kprintf("\n");
@@ -178,6 +185,134 @@ void cmd_version(int argc, char **argv) {
 }
 
 /*
+ * ls - List directory contents (READ-ONLY)
+ */
+void cmd_ls(int argc, char **argv) {
+    const char *path = "/";
+
+    if (argc > 1) {
+        path = argv[1];
+    }
+
+    struct vfs_node *node = vfs_resolve_path(path);
+    if (!node) {
+        kprintf("ls: cannot access '%s': No such file or directory\n", path);
+        return;
+    }
+
+    if (!vfs_is_directory(node)) {
+        kprintf("ls: '%s': Not a directory\n", path);
+        return;
+    }
+
+    kprintf("\nContents of %s:\n", path);
+    kprintf("-------------------\n");
+
+    struct dirent *entry;
+    uint32_t index = 0;
+    int count = 0;
+
+    while ((entry = vfs_readdir(node, index++)) != NULL) {
+        struct vfs_node *child = vfs_finddir(node, entry->name);
+        if (child) {
+            if (vfs_is_directory(child)) {
+                kprintf("  [DIR]  %s\n", entry->name);
+            } else {
+                kprintf("  %6llu  %s\n", child->size, entry->name);
+            }
+            count++;
+        }
+    }
+
+    if (count == 0) {
+        kprintf("  (empty)\n");
+    }
+    kprintf("\n");
+}
+
+/*
+ * cat - Display file contents (READ-ONLY)
+ */
+void cmd_cat(int argc, char **argv) {
+    if (argc < 2) {
+        kprintf("Usage: cat <filename>\n");
+        return;
+    }
+
+    struct vfs_node *node = vfs_open(argv[1]);
+    if (!node) {
+        kprintf("cat: %s: No such file or directory\n", argv[1]);
+        return;
+    }
+
+    if (vfs_is_directory(node)) {
+        kprintf("cat: %s: Is a directory\n", argv[1]);
+        vfs_close(node);
+        return;
+    }
+
+    /* Read and display file contents */
+    uint64_t size = vfs_size(node);
+    if (size == 0) {
+        kprintf("(empty file)\n");
+        vfs_close(node);
+        return;
+    }
+
+    /* Limit display to 4KB for safety */
+    if (size > 4096) {
+        kprintf("(file too large, showing first 4096 bytes)\n");
+        size = 4096;
+    }
+
+    uint8_t buffer[512];
+    uint64_t offset = 0;
+
+    kprintf("\n");
+    while (offset < size) {
+        uint32_t to_read = sizeof(buffer);
+        if (offset + to_read > size) {
+            to_read = size - offset;
+        }
+
+        int bytes = vfs_read(node, offset, to_read, buffer);
+        if (bytes <= 0) break;
+
+        /* Print as text */
+        for (int i = 0; i < bytes; i++) {
+            char c = buffer[i];
+            if (c == '\n' || c == '\r' || c == '\t' || (c >= 32 && c < 127)) {
+                kprintf("%c", c);
+            } else {
+                kprintf(".");
+            }
+        }
+
+        offset += bytes;
+    }
+    kprintf("\n");
+
+    vfs_close(node);
+}
+
+/*
+ * ps - List processes
+ */
+void cmd_ps(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+
+    kprintf("\nProcess List:\n");
+    kprintf("-------------\n");
+    kprintf("  PID  State      Name\n");
+
+    /* List processes (simplified - just show count for now) */
+    uint64_t count = process_count();
+    kprintf("\nTotal processes: %llu\n", count);
+    kprintf("Context switches: %llu\n\n", scheduler_get_switches());
+}
+
+/*
  * test - Run system tests
  */
 void cmd_test(int argc, char **argv) {
@@ -258,16 +393,19 @@ void cmd_reboot(int argc, char **argv) {
 }
 
 /*
- * shutdown - Halt the system
+ * shutdown - Power off the system
  */
 void cmd_shutdown(int argc, char **argv) {
     (void)argc;
     (void)argv;
 
-    kprintf("\nShutting down...\n");
-    kprintf("It is now safe to turn off your computer.\n");
+    kprintf("\nShutting down AstraOS...\n");
 
-    /* Disable interrupts and halt */
+    /* Use ACPI power off */
+    acpi_poweroff();
+
+    /* If ACPI fails, fall back to halt */
+    kprintf("It is now safe to turn off your computer.\n");
     cpu_halt_forever();
 }
 

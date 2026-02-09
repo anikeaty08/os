@@ -21,6 +21,12 @@
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "mm/heap.h"
+#include "proc/process.h"
+#include "proc/scheduler.h"
+#include "drivers/ata.h"
+#include "drivers/acpi.h"
+#include "fs/vfs.h"
+#include "fs/fat.h"
 #include "shell/shell.h"
 
 /*
@@ -506,6 +512,57 @@ void kmain(void) {
     keyboard_init();
     serial_puts("OK\n");
     fb_puts("PS/2 keyboard initialized\n");
+
+    /* Initialize Process Management */
+    serial_puts("Initializing process management... ");
+    process_init();
+    scheduler_init();
+    serial_puts("OK\n");
+    fb_puts("Process management initialized\n");
+
+    /* Initialize ACPI */
+    serial_puts("Initializing ACPI... ");
+    if (acpi_init()) {
+        fb_puts("ACPI initialized (power off supported)\n");
+    } else {
+        fb_puts("ACPI not available (using fallback shutdown)\n");
+    }
+
+    /* Initialize ATA/Disk */
+    serial_puts("Initializing ATA... ");
+    ata_init();
+    serial_puts("OK\n");
+    fb_puts("ATA disk driver initialized\n");
+
+    /* Initialize VFS */
+    serial_puts("Initializing VFS... ");
+    vfs_init();
+    serial_puts("OK\n");
+
+    /* Try to mount FAT16 filesystem */
+    serial_puts("Detecting FAT16 filesystem... ");
+    struct vfs_node *fs_root = NULL;
+
+    /* Try each ATA drive */
+    for (int i = 0; i < 4; i++) {
+        if (ata_drive_present(i)) {
+            fs_root = fat16_init(i, 0);  /* Try partition at LBA 0 */
+            if (fs_root) {
+                vfs_mount_root(fs_root);
+                serial_puts("OK (drive ");
+                char drive_num = '0' + i;
+                serial_putchar(drive_num);
+                serial_puts(")\n");
+                fb_puts("FAT16 filesystem mounted\n");
+                break;
+            }
+        }
+    }
+
+    if (!fs_root) {
+        serial_puts("No FAT16 filesystem found\n");
+        fb_puts("No filesystem detected (ls/cat disabled)\n");
+    }
 
     /* Display memory info */
     fb_puts("\nMemory: ");

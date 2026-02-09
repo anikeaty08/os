@@ -24,5 +24,8 @@ void cmd_reboot(int argc, char **argv);
 void cmd_shutdown(int argc, char **argv);
 void cmd_version(int argc, char **argv);
 void cmd_test(int argc, char **argv);
+void cmd_ls(int argc, char **argv);
+void cmd_cat(int argc, char **argv);
+void cmd_ps(int argc, char **argv);
 
 #endif /* _ASTRA_SHELL_COMMANDS_H */
