@@ -12,6 +12,9 @@
 #include "lib/string.h"
 #include "drivers/serial.h"
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/gdt.h"
+#include "arch/x86_64/idt.h"
+#include "arch/x86_64/irq.h"
 
 /*
  * Limine Request Markers
@@ -390,6 +393,30 @@ void kmain(void) {
     fb_puts("AstraOS v0.1\n");
     fb_puts("============\n\n");
 
+    /* Initialize GDT */
+    serial_puts("\nInitializing GDT... ");
+    gdt_init();
+    serial_puts("OK\n");
+    fb_puts("GDT initialized\n");
+
+    /* Initialize IRQ subsystem (PIC) */
+    serial_puts("Initializing IRQ (PIC)... ");
+    irq_init();
+    serial_puts("OK\n");
+    fb_puts("PIC initialized\n");
+
+    /* Initialize IDT */
+    serial_puts("Initializing IDT... ");
+    idt_init();
+    serial_puts("OK\n");
+    fb_puts("IDT initialized\n");
+
+    /* Enable interrupts */
+    serial_puts("Enabling interrupts... ");
+    cpu_sti();
+    serial_puts("OK\n");
+    fb_puts("Interrupts enabled\n\n");
+
     /* Get kernel address info */
     if (kernel_addr_request.response) {
         serial_puts("Kernel Physical: ");
@@ -452,18 +479,21 @@ void kmain(void) {
     fb_puts("Serial output: COM1\n");
     fb_puts("Status: Kernel initialized\n\n");
 
-    fb_puts("Next steps:\n");
-    fb_puts("  - GDT initialization\n");
-    fb_puts("  - IDT and interrupts\n");
-    fb_puts("  - Memory management\n");
-    fb_puts("  - Keyboard driver\n");
+    fb_puts("Completed:\n");
+    fb_puts("  [OK] GDT with TSS\n");
+    fb_puts("  [OK] IDT with exceptions\n");
+    fb_puts("  [OK] PIC remapped\n");
+    fb_puts("  [OK] Interrupts enabled\n\n");
+
+    fb_puts("Next: Timer and keyboard drivers\n");
 
     serial_puts("\n========================================\n");
     serial_puts("  AstraOS Kernel Initialized!\n");
+    serial_puts("  Interrupts are now enabled.\n");
     serial_puts("========================================\n");
-    serial_puts("\nEntering halt loop...\n");
+    serial_puts("\nEntering idle loop (waiting for interrupts)...\n");
 
-    /* Halt - waiting for interrupts (which we haven't set up yet) */
+    /* Idle loop - wait for interrupts */
     for (;;) {
         cpu_hlt();
     }
