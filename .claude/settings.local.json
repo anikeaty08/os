@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "WebFetch(domain:wiki.osdev.org)"
+      "WebFetch(domain:wiki.osdev.org)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
