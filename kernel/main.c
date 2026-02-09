@@ -10,11 +10,18 @@
 #include "limine.h"
 #include "panic.h"
 #include "lib/string.h"
+#include "lib/stdio.h"
 #include "drivers/serial.h"
+#include "drivers/pit.h"
+#include "drivers/keyboard.h"
 #include "arch/x86_64/cpu.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/idt.h"
 #include "arch/x86_64/irq.h"
+#include "mm/pmm.h"
+#include "mm/vmm.h"
+#include "mm/heap.h"
+#include "shell/shell.h"
 
 /*
  * Limine Request Markers
@@ -470,31 +477,56 @@ void kmain(void) {
     print_memory_size(total_usable);
     serial_puts("\n");
 
-    /* Display on framebuffer */
-    fb_puts("Memory: ");
-    uint64_to_dec(total_usable / (1024 * 1024), buf);
+    /* Initialize Physical Memory Manager */
+    serial_puts("\nInitializing PMM... ");
+    pmm_init(memmap_request.response, hhdm_offset);
+    serial_puts("OK\n");
+    fb_puts("Physical memory manager initialized\n");
+
+    /* Initialize Virtual Memory Manager */
+    serial_puts("Initializing VMM... ");
+    vmm_init(hhdm_offset);
+    serial_puts("OK\n");
+    fb_puts("Virtual memory manager initialized\n");
+
+    /* Initialize Kernel Heap */
+    serial_puts("Initializing heap... ");
+    heap_init();
+    serial_puts("OK\n");
+    fb_puts("Kernel heap initialized\n");
+
+    /* Initialize PIT Timer */
+    serial_puts("Initializing PIT timer... ");
+    pit_init(1000);  /* 1000 Hz = 1ms per tick */
+    serial_puts("OK\n");
+    fb_puts("PIT timer initialized (1000 Hz)\n");
+
+    /* Initialize Keyboard */
+    serial_puts("Initializing keyboard... ");
+    keyboard_init();
+    serial_puts("OK\n");
+    fb_puts("PS/2 keyboard initialized\n");
+
+    /* Display memory info */
+    fb_puts("\nMemory: ");
+    uint64_to_dec(pmm_get_free_memory() / (1024 * 1024), buf);
     fb_puts(buf);
-    fb_puts(" MB usable\n\n");
-
-    fb_puts("Serial output: COM1\n");
-    fb_puts("Status: Kernel initialized\n\n");
-
-    fb_puts("Completed:\n");
-    fb_puts("  [OK] GDT with TSS\n");
-    fb_puts("  [OK] IDT with exceptions\n");
-    fb_puts("  [OK] PIC remapped\n");
-    fb_puts("  [OK] Interrupts enabled\n\n");
-
-    fb_puts("Next: Timer and keyboard drivers\n");
+    fb_puts(" MB free / ");
+    uint64_to_dec(pmm_get_total_memory() / (1024 * 1024), buf);
+    fb_puts(buf);
+    fb_puts(" MB total\n");
 
     serial_puts("\n========================================\n");
     serial_puts("  AstraOS Kernel Initialized!\n");
-    serial_puts("  Interrupts are now enabled.\n");
+    serial_puts("  All subsystems operational.\n");
     serial_puts("========================================\n");
-    serial_puts("\nEntering idle loop (waiting for interrupts)...\n");
 
-    /* Idle loop - wait for interrupts */
-    for (;;) {
-        cpu_hlt();
-    }
+    fb_puts("\nAll systems initialized successfully!\n");
+    fb_puts("Starting shell...\n");
+
+    /* Start the interactive shell */
+    shell_run();
+
+    /* Should never reach here */
+    panic("Shell exited unexpectedly");
 }
