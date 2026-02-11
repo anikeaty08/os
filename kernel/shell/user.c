@@ -7,6 +7,7 @@
 #include "../lib/string.h"
 #include "../lib/stdio.h"
 #include "../drivers/pit.h"
+#include "../mm/heap.h"
 
 static User users[MAX_USERS];
 static int user_count = 0;
@@ -35,8 +36,15 @@ void user_system_init(void) {
     user_count = 0;
     current_user = NULL;
     
-    /* Create default admin user */
-    user_create("aniket", "astra", true);
+    /* 
+     * No default user creation here!
+     * We will let the login screen handle the first-time setup.
+     * This avoids hardcoding and ensures the user system is in a known state.
+     */
+}
+
+int user_count_users(void) {
+    return user_count;
 }
 
 bool user_create(const char *username, const char *password, bool is_admin) {

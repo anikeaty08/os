@@ -28,6 +28,7 @@
 #include "fs/vfs.h"
 #include "fs/fat.h"
 #include "shell/shell.h"
+#include "shell/user.h"
 #include "lib/theme.h"
 
 /*
@@ -311,6 +312,49 @@ void fb_puts(const char *s) {
     while (*s) {
         fb_putchar(*s++);
     }
+}
+
+/*
+ * Get framebuffer dimensions (in characters)
+ */
+uint32_t fb_get_width(void) {
+    if (!g_framebuffer) return 80;
+    return g_framebuffer->width / CHAR_WIDTH;
+}
+
+uint32_t fb_get_height(void) {
+    if (!g_framebuffer) return 25;
+    return g_framebuffer->height / CHAR_HEIGHT;
+}
+
+/*
+ * Calculate X position to center text
+ */
+uint32_t fb_center_x(const char *text) {
+    uint32_t screen_w = fb_get_width();
+    uint32_t screen_w = fb_get_width();
+    
+    /* Strip ANSI codes for length calculation (simplified) */
+    uint32_t visible_len = 0;
+    for (int i = 0; text[i]; i++) {
+        if (text[i] == '\033') {
+            while (text[i] && text[i] != 'm') i++;
+        } else {
+            visible_len++;
+        }
+    }
+    
+    if (visible_len >= screen_w) return 0;
+    return (screen_w - visible_len) / 2;
+}
+
+/*
+ * Calculate Y position to center content of given height
+ */
+uint32_t fb_center_y(uint32_t content_height) {
+    uint32_t screen_h = fb_get_height();
+    if (content_height >= screen_h) return 0;
+    return (screen_h - content_height) / 2;
 }
 
 void fb_clear(void) {
@@ -613,9 +657,11 @@ void kmain(void) {
     fb_puts("\nAll systems initialized successfully!\n");
     fb_puts("Starting shell...\n");
 
-    /* Initialize theme system */
+    /* Initialize subsystems */
     theme_init();
-
+    user_system_init();
+    
+    /* Play boot animation */
     /* Start the interactive shell */
     shell_run();
 

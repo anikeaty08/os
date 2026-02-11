@@ -7,14 +7,22 @@
 #include "../lib/stdio.h"
 #include "../lib/theme.h"
 #include "../drivers/pit.h"
+#include "../lib/string.h"
+#include "../drivers/graphics.h"
 
-/* Simple delay function */
+/* Simple delay */
 static void delay_ms(uint32_t ms) {
     uint64_t start = pit_get_ticks();
-    uint64_t target = start + (ms / 10); /* 10ms per tick */
+    uint64_t target = start + (ms / 10);
     while (pit_get_ticks() < target) {
         __asm__ volatile ("hlt");
     }
+}
+
+static void print_centered(const char *text) {
+    uint32_t pad = fb_center_x(text);
+    for(uint32_t i=0; i<pad; i++) kprintf(" ");
+    kprintf("%s\n", text);
 }
 
 void boot_animation_show(void) {
@@ -23,20 +31,16 @@ void boot_animation_show(void) {
     /* Clear screen first */
     kprintf("\033[2J\033[H"); /* ANSI clear screen */
     
-    /* Logo */
-    kprintf("\n\n");
-    kprintf("%s        ⭐ ═══════════════════════════════ ⭐%s\n", theme->accent1, ANSI_RESET);
-    kprintf("%s           %s\n", theme->accent1, ANSI_RESET);
-    kprintf("%s              █████╗ ███████╗████████╗██████╗  █████╗ %s\n", theme->accent2, ANSI_RESET);
-    kprintf("%s             ██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔══██╗%s\n", theme->accent2, ANSI_RESET);
-    kprintf("%s             ███████║███████╗   ██║   ██████╔╝███████║%s\n", theme->accent2, ANSI_RESET);
-    kprintf("%s             ██╔══██║╚════██║   ██║   ██╔══██╗██╔══██║%s\n", theme->accent2, ANSI_RESET);
-    kprintf("%s             ██║  ██║███████║   ██║   ██║  ██║██║  ██║%s\n", theme->accent2, ANSI_RESET);
-    kprintf("%s             ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝%s\n", theme->accent2, ANSI_RESET);
-    kprintf("%s                                                    %s\n", theme->accent1, ANSI_RESET);
-    kprintf("%s                    %sOperating System v0.2%s%s\n", 
-            theme->accent1, ANSI_BOLD, ANSI_RESET, ANSI_RESET);
-    kprintf("%s        ⭐ ═══════════════════════════════ ⭐%s\n", theme->accent1, ANSI_RESET);
+    /* Center the Logo */
+    print_centered("      █████╗ ███████╗████████╗██████╗  █████╗     ");
+    print_centered("     ██╔══██╗██╔════╝╚══██╔══╝██╔══██╗██╔══██╗    ");
+    print_centered("     ███████║███████╗   ██║   ██████╔╝███████║    ");
+    print_centered("     ██╔══██║╚════██║   ██║   ██╔══██╗██╔══██║    ");
+    print_centered("     ██║  ██║███████║   ██║   ██║  ██║██║  ██║    ");
+    print_centered("     ╚═╝  ╚═╝╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝    ");
+    kprintf("\n");
+    print_centered("Operating System v0.2");
+    print_centered("⭐ ═══════════════════════════════ ⭐");
     kprintf("\n\n");
     
     delay_ms(1000);

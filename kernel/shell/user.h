@@ -24,6 +24,7 @@ typedef struct {
 
 /* User management functions */
 void user_system_init(void);
+int user_count_users(void);
 bool user_create(const char *username, const char *password, bool is_admin);
 bool user_authenticate(const char *username, const char *password);
 bool user_exists(const char *username);

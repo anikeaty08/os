@@ -8,6 +8,7 @@
 #include "../lib/string.h"
 #include "../lib/theme.h"
 #include "../fs/vfs.h"
+#include "../mm/heap.h"
 
 #define MAX_FILE_SIZE (1024 * 1024)  /* 1 MB max */
 #define LINES_PER_PAGE 20
