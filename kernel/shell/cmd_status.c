@@ -20,7 +20,6 @@ void cmd_status(int argc, char **argv) {
     /* Get system information */
     uint64_t total_mem = pmm_get_total_memory();
     uint64_t used_mem = pmm_get_used_memory();
-    uint64_t free_mem = pmm_get_free_memory();
     uint64_t uptime_ms = pit_get_ticks() * 10; /* 10ms per tick */
     
     /* Calculate percentages */

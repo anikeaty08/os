@@ -107,7 +107,7 @@ void cmd_view(int argc, char **argv) {
         return;
     }
     
-    if (node->type != VFS_FILE) {
+    if ((node->flags & 0xFF) != VFS_FILE) {
         kprintf("%sError:%s Not a file: %s\n", theme->error, ANSI_RESET, filename);
         vfs_close(node);
         return;

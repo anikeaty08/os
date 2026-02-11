@@ -6,6 +6,7 @@
 #include "../lib/stdio.h"
 #include "../lib/theme.h"
 #include "../lib/string.h"
+#include <stdbool.h>
 
 void cmd_theme(int argc, char **argv) {
     const ColorTheme *current = theme_get_active();
@@ -18,8 +19,8 @@ void cmd_theme(int argc, char **argv) {
         
         kprintf("%sAvailable themes:%s\n", ANSI_BOLD, ANSI_RESET);
         for (int i = 0; i < THEME_COUNT; i++) {
-            const char *name = theme_get_name(i);
-            if (i == theme_get_current()) {
+            const char *name = theme_get_name((ThemeID)i);
+            if ((ThemeID)i == theme_get_current()) {
                 kprintf("  %s%s%s (active)\n", current->success, name, ANSI_RESET);
             } else {
                 kprintf("  %s\n", name);
@@ -35,7 +36,7 @@ void cmd_theme(int argc, char **argv) {
     ThemeID new_theme = THEME_COUNT;
     
     for (int i = 0; i < THEME_COUNT; i++) {
-        const char *name = theme_get_name(i);
+        const char *name = theme_get_name((ThemeID)i);
         /* Case-insensitive comparison */
         bool match = true;
         for (int j = 0; name[j] && requested[j]; j++) {

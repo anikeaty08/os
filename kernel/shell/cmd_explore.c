@@ -25,7 +25,7 @@ void cmd_explore(int argc, char **argv) {
         return;
     }
     
-    if (node->type != VFS_DIRECTORY) {
+    if ((node->flags & 0xFF) != VFS_DIRECTORY) {
         kprintf("%sError:%s Not a directory: %s\n",
                 theme->error, ANSI_RESET, path);
         vfs_close(node);
@@ -60,7 +60,7 @@ void cmd_explore(int argc, char **argv) {
         struct vfs_node *child = vfs_open(full_path);
         
         if (child) {
-            if (child->type == VFS_DIRECTORY) {
+            if ((child->flags & 0xFF) == VFS_DIRECTORY) {
                 kprintf("├── %s📁 %s%s%s\n",
                         theme->info, theme->accent1, entry->name, ANSI_RESET);
                 dir_count++;
