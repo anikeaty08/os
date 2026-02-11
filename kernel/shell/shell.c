@@ -129,7 +129,6 @@ void shell_execute(const char *line) {
  * Print shell prompt
  */
 static void print_prompt(void) {
-    const ColorTheme *theme = theme_get_active();
     const char *username = user_get_current_name();
     
     /* Calculate uptime */
@@ -140,23 +139,10 @@ static void print_prompt(void) {
     seconds %= 60;
     minutes %= 60;
     
-    /* Professional two-line prompt */
-    kprintf("%s┌─[%s%s%s%s@%s%sAstraOS%s%s]─[%s~%s]─[%s↑ %02llu:%02llu:%02llu%s]%s\n",
-            theme->accent1,                    /* ┌─[ */
-            ANSI_RESET, theme->prompt_user, username, ANSI_RESET,  /* username */
-            theme->accent1,                    /* @ */
-            theme->prompt_host, "AstraOS", ANSI_RESET,  /* hostname */
-            theme->accent1,                    /* ]─[ */
-            theme->prompt_dir, ANSI_RESET,     /* ~ */
-            theme->accent1,                    /* ]─[ */
-            theme->info, hours, minutes, seconds, ANSI_RESET,  /* uptime */
-            ANSI_RESET);
-    
-    kprintf("%s└─%s%s❯%s ",
-            theme->accent1,
-            ANSI_RESET,
-            theme->prompt_symbol,
-            ANSI_RESET);
+    /* Two-line prompt (ASCII-safe) */
+    kprintf("[%s@AstraOS ~] [up %02llu:%02llu:%02llu]\n",
+            username, hours, minutes, seconds);
+    kprintf("$ ");
 }
 
 /*

@@ -31,7 +31,7 @@ void cmd_help(int argc, char **argv) {
     const ColorTheme *theme = theme_get_active();
 
     kprintf("\n%s%sAstraOS Commands%s%s\n", ANSI_BOLD, theme->accent1, ANSI_RESET, ANSI_RESET);
-    kprintf("%s═══════════════════════════════════════%s\n", theme->accent1, ANSI_RESET);
+    kprintf("%s=======================================%s\n", theme->accent1, ANSI_RESET);
     
     kprintf("\n%sSystem:%s\n", theme->info, ANSI_RESET);
     kprintf("  %sstatus%s    - Live system dashboard\n", theme->accent2, ANSI_RESET);
@@ -450,27 +450,27 @@ void cmd_aniket(int argc, char **argv) {
     kprintf("                  / __ |/  |/ /_/ / / ,<  / _/  / /    / /   \n");
     kprintf("                 /_/ |_/_/|___/___//_/|_|/___/ /_/    /_/    \n");
     kprintf("\n");
-    kprintf("       ╔═════════════════════════════════════════════════════════════╗\n");
-    kprintf("       ║               🚀 ASTRAOS OPERATING SYSTEM 🚀                ║\n");
-    kprintf("       ╠═════════════════════════════════════════════════════════════╣\n");
-    kprintf("       ║                                                             ║\n");
-    kprintf("       ║    Creator: Aniket                                          ║\n");
-    kprintf("       ║    Architecture: x86_64 (Long Mode)                         ║\n");
-    kprintf("       ║    Kernel Type: Monolithic Hobby Kernel                     ║\n");
-    kprintf("       ║    Bootloader: Limine (Stivale2/Limine Protocol)            ║\n");
-    kprintf("       ║    Language: GNU C11 with Inline Assembly                   ║\n");
-    kprintf("       ║                                                             ║\n");
-    kprintf("       ║    \"Building the future, one kernel at a time!\"            ║\n");
-    kprintf("       ║                                                             ║\n");
-    kprintf("       ╠═════════════════════════════════════════════════════════════╣\n");
-    kprintf("       ║  ⭐ Kernel Subsystems:                                      ║\n");
-    kprintf("       ║    • Full Physical & Virtual Memory Management              ║\n");
-    kprintf("       ║    • Preemptive Multi-tasking (Ready for User-space)        ║\n");
-    kprintf("       ║    • Virtual File System (VFS) with FAT16 Support           ║\n");
-    kprintf("       ║    • PS/2 Keyboard & COM1 Serial I/O Abstraction           ║\n");
-    kprintf("       ║    • ACPI System Control & Power Management                 ║\n");
-    kprintf("       ║    • Framebuffer Graphics with Custom Font Engine           ║\n");
-    kprintf("       ║                                                             ║\n");
-    kprintf("       ╚═════════════════════════════════════════════════════════════╝\n");
+    kprintf("       +===================================================================+\n");
+    kprintf("       |               ASTRAOS OPERATING SYSTEM                            |\n");
+    kprintf("       +===================================================================+\n");
+    kprintf("       |                                                                   |\n");
+    kprintf("       |    Creator: Aniket                                                |\n");
+    kprintf("       |    Architecture: x86_64 (Long Mode)                               |\n");
+    kprintf("       |    Kernel Type: Monolithic Hobby Kernel                           |\n");
+    kprintf("       |    Bootloader: Limine (Limine Protocol)                           |\n");
+    kprintf("       |    Language: GNU C11 with Inline Assembly                         |\n");
+    kprintf("       |                                                                   |\n");
+    kprintf("       |    \"Building the future, one kernel at a time!\"                  |\n");
+    kprintf("       |                                                                   |\n");
+    kprintf("       +===================================================================+\n");
+    kprintf("       |  Kernel Subsystems:                                               |\n");
+    kprintf("       |    * Full Physical & Virtual Memory Management                    |\n");
+    kprintf("       |    * Preemptive Multi-tasking (Ready for User-space)              |\n");
+    kprintf("       |    * Virtual File System (VFS) with FAT16 Support                |\n");
+    kprintf("       |    * PS/2 Keyboard & COM1 Serial I/O Abstraction                 |\n");
+    kprintf("       |    * ACPI System Control & Power Management                      |\n");
+    kprintf("       |    * Framebuffer Graphics with Custom Font Engine                |\n");
+    kprintf("       |                                                                   |\n");
+    kprintf("       +===================================================================+\n");
     kprintf("\n");
 }

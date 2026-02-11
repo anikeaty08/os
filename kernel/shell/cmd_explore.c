@@ -14,7 +14,7 @@ void cmd_explore(int argc, char **argv) {
     const char *path = (argc > 1) ? argv[1] : "/";
     
     kprintf("\n");
-    kprintf("%s📁 %s%s (root)%s\n", theme->info, ANSI_BOLD, path, ANSI_RESET);
+    kprintf("%s[DIR] %s%s (root)%s\n", theme->info, ANSI_BOLD, path, ANSI_RESET);
     
     /* Try to read directory */
     struct vfs_node *node = vfs_open(path);
@@ -61,7 +61,7 @@ void cmd_explore(int argc, char **argv) {
         
         if (child) {
             if ((child->flags & 0xFF) == VFS_DIRECTORY) {
-                kprintf("├── %s📁 %s%s%s\n",
+                kprintf("|-- %s[DIR] %s%s%s\n",
                         theme->info, theme->accent1, entry->name, ANSI_RESET);
                 dir_count++;
             } else {
@@ -79,7 +79,7 @@ void cmd_explore(int argc, char **argv) {
                     unit = "KB";
                 }
                 
-                kprintf("├── %s📄 %s%s (%llu %s)\n",
+                kprintf("|-- %s[FILE] %s%s (%llu %s)\n",
                         theme->success, entry->name, ANSI_RESET, display_size, unit);
                 file_count++;
             }

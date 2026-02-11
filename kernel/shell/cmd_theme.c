@@ -66,7 +66,7 @@ void cmd_theme(int argc, char **argv) {
     theme_set(new_theme);
     const ColorTheme *activated = theme_get_active();
     
-    kprintf("\n%s✓ Theme changed to:%s %s%s%s\n\n",
+    kprintf("\n%s[OK] Theme changed to:%s %s%s%s\n\n",
             activated->success, ANSI_RESET,
             activated->accent1, activated->name, ANSI_RESET);
 }

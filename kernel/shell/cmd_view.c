@@ -138,14 +138,14 @@ void cmd_view(int argc, char **argv) {
     if (ext) ext++; else ext = "";
     
     /* Display header */
-    kprintf("\n%s╔══════════════════════════════════════════════════════════╗%s\n",
-            theme->accent1, ANSI_RESET);
-    kprintf("%s║%s  File: %s%-45s%s  %s║%s\n",
-            theme->accent1, ANSI_RESET, theme->accent2, filename, ANSI_RESET, theme->accent1, ANSI_RESET);
-    kprintf("%s║%s  Size: %s%llu bytes%s                                        %s║%s\n",
-            theme->accent1, ANSI_RESET, theme->info, bytes_read, ANSI_RESET, theme->accent1, ANSI_RESET);
-    kprintf("%s╚══════════════════════════════════════════════════════════╝%s\n",
-            theme->accent1, ANSI_RESET);
+    kprintf("\n+==========================================================+\n");
+    kprintf("|  File: %-45s  |\n", filename);
+    kprintf("|  Size: %llu bytes", bytes_read);
+    /* Pad the line */
+    int pad_needed = 50 - 8;  /* rough estimate */
+    for (int pi = 0; pi < pad_needed; pi++) kprintf(" ");
+    kprintf("|\n");
+    kprintf("+==========================================================+\n");
     kprintf("\n");
     
     /* Display content with line numbers and syntax highlighting */
@@ -159,7 +159,7 @@ void cmd_view(int argc, char **argv) {
             line[line_pos] = '\0';
             
             /* Print line number */
-            kprintf("%s%4d%s │ ", theme->info, line_num, ANSI_RESET);
+            kprintf("%s%4d%s | ", theme->info, line_num, ANSI_RESET);
             
             /* Print line with syntax highlighting */
             print_with_syntax(line, ext);

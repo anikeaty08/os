@@ -274,8 +274,44 @@ static void fb_scroll(void) {
     fb_cursor_y -= CHAR_HEIGHT;
 }
 
+/*
+ * ANSI escape sequence state machine for framebuffer
+ * Silently consumes escape sequences so they don't display as garbage
+ */
+static int ansi_state = 0;  /* 0=normal, 1=got ESC, 2=in CSI sequence */
+
 void fb_putchar(char c) {
     if (!g_framebuffer) return;
+
+    /* ANSI escape sequence handling - silently consume */
+    if (ansi_state == 1) {
+        if (c == '[') {
+            ansi_state = 2;  /* CSI sequence */
+            return;
+        }
+        ansi_state = 0;  /* Not a CSI, reset */
+        return;
+    }
+    if (ansi_state == 2) {
+        /* In CSI sequence - consume until we hit a letter */
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+            /* Handle clear screen: ESC[2J */
+            /* Handle cursor home: ESC[H */
+            /* For now just consume and reset */
+            ansi_state = 0;
+        }
+        /* Still consuming digits, semicolons, etc. */
+        return;
+    }
+    if (c == '\033') {
+        ansi_state = 1;
+        return;
+    }
+
+    /* Skip multi-byte UTF-8 sequences (non-ASCII bytes) */
+    if ((unsigned char)c >= 0x80) {
+        return;
+    }
 
     if (c == '\n') {
         fb_cursor_x = 0;
@@ -287,6 +323,8 @@ void fb_putchar(char c) {
     } else if (c == '\b') {
         if (fb_cursor_x >= CHAR_WIDTH) {
             fb_cursor_x -= CHAR_WIDTH;
+            /* Clear the character at cursor position */
+            fb_draw_char(' ', fb_cursor_x, fb_cursor_y, FG_COLOR, BG_COLOR);
         } else if (fb_cursor_y >= CHAR_HEIGHT) {
             fb_cursor_y -= CHAR_HEIGHT;
             fb_cursor_x = (g_framebuffer->width / CHAR_WIDTH - 1) * CHAR_WIDTH;
