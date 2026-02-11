@@ -159,6 +159,7 @@ static inline void cpu_wrmsr(uint32_t msr, uint64_t value) {
 /*
  * cpu_halt_forever - Halt CPU permanently (for panic)
  */
+__attribute__((noreturn))
 static inline void cpu_halt_forever(void) {
     cpu_cli();
     for (;;) {

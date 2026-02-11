@@ -7,6 +7,7 @@
 #define _ASTRA_ARCH_IO_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 /*
  * outb - Write byte to I/O port

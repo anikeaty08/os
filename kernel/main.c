@@ -92,6 +92,15 @@ static volatile struct limine_bootloader_info_request bootloader_info_request = 
 };
 
 /*
+ * RSDP (ACPI) Request
+ */
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_rsdp_request rsdp_request = {
+    .id = LIMINE_RSDP_REQUEST,
+    .revision = 0
+};
+
+/*
  * Global HHDM offset for physical to virtual address conversion
  */
 uint64_t hhdm_offset = 0;
@@ -273,6 +282,13 @@ void fb_putchar(char c) {
         fb_cursor_x = 0;
     } else if (c == '\t') {
         fb_cursor_x = (fb_cursor_x + 32) & ~31;
+    } else if (c == '\b') {
+        if (fb_cursor_x >= CHAR_WIDTH) {
+            fb_cursor_x -= CHAR_WIDTH;
+        } else if (fb_cursor_y >= CHAR_HEIGHT) {
+            fb_cursor_y -= CHAR_HEIGHT;
+            fb_cursor_x = (g_framebuffer->width / CHAR_WIDTH - 1) * CHAR_WIDTH;
+        }
     } else {
         fb_draw_char(c, fb_cursor_x, fb_cursor_y, FG_COLOR, BG_COLOR);
         fb_cursor_x += CHAR_WIDTH;
@@ -521,10 +537,25 @@ void kmain(void) {
     fb_puts("Process management initialized\n");
 
     /* Initialize ACPI */
-    serial_puts("Initializing ACPI... ");
-    if (acpi_init()) {
+    serial_puts("Initializing ACPI...\n");
+    void *rsdp_addr = NULL;
+    if (rsdp_request.response && rsdp_request.response->address) {
+        void *raw_addr = rsdp_request.response->address;
+        /* Limine may return a physical address for RSDP - convert via HHDM if needed */
+        if ((uint64_t)raw_addr < hhdm_offset) {
+            rsdp_addr = (void *)((uint64_t)raw_addr + hhdm_offset);
+        } else {
+            rsdp_addr = raw_addr;
+        }
+        serial_puts("ACPI: RSDP provided by bootloader\n");
+    } else {
+        serial_puts("ACPI: No RSDP from bootloader, will scan BIOS ROM\n");
+    }
+    if (acpi_init(rsdp_addr, hhdm_offset)) {
+        serial_puts("ACPI: Initialized successfully\n");
         fb_puts("ACPI initialized (power off supported)\n");
     } else {
+        serial_puts("ACPI: Not available\n");
         fb_puts("ACPI not available (using fallback shutdown)\n");
     }
 

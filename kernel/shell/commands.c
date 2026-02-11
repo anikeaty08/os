@@ -15,6 +15,7 @@
 #include "../fs/vfs.h"
 #include "../proc/process.h"
 #include "../proc/scheduler.h"
+#include "../drivers/serial.h"
 
 /* External framebuffer functions */
 extern void fb_clear(void);
@@ -41,6 +42,7 @@ void cmd_help(int argc, char **argv) {
     kprintf("  ps        - List processes\n");
     kprintf("  reboot    - Restart the system\n");
     kprintf("  shutdown  - Halt the system\n");
+    kprintf("  aniket    - About the creator\n");
     kprintf("\n");
 }
 
@@ -51,6 +53,8 @@ void cmd_clear(int argc, char **argv) {
     (void)argc;
     (void)argv;
     fb_clear();
+    /* ANSI escape sequence to clear serial terminal: Clear Screen and Home Cursor */
+    serial_puts("\033[2J\033[H");
 }
 
 /*
@@ -412,3 +416,41 @@ void cmd_shutdown(int argc, char **argv) {
 /* Helper for heap stats */
 void *kmalloc(size_t size);
 void kfree(void *ptr);
+
+/*
+ * aniket - Easter egg / about creator
+ */
+void cmd_aniket(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+
+    kprintf("\n");
+    kprintf("                    ___   _   __ ______ __ __ ______ ______\n");
+    kprintf("                   / _ | / | / //  _/ //_// __/_  __//_  __/\n");
+    kprintf("                  / __ |/  |/ /_/ / / ,<  / _/  / /    / /   \n");
+    kprintf("                 /_/ |_/_/|___/___//_/|_|/___/ /_/    /_/    \n");
+    kprintf("\n");
+    kprintf("       ╔═════════════════════════════════════════════════════════════╗\n");
+    kprintf("       ║               🚀 ASTRAOS OPERATING SYSTEM 🚀                ║\n");
+    kprintf("       ╠═════════════════════════════════════════════════════════════╣\n");
+    kprintf("       ║                                                             ║\n");
+    kprintf("       ║    Creator: Aniket                                          ║\n");
+    kprintf("       ║    Architecture: x86_64 (Long Mode)                         ║\n");
+    kprintf("       ║    Kernel Type: Monolithic Hobby Kernel                     ║\n");
+    kprintf("       ║    Bootloader: Limine (Stivale2/Limine Protocol)            ║\n");
+    kprintf("       ║    Language: GNU C11 with Inline Assembly                   ║\n");
+    kprintf("       ║                                                             ║\n");
+    kprintf("       ║    \"Building the future, one kernel at a time!\"            ║\n");
+    kprintf("       ║                                                             ║\n");
+    kprintf("       ╠═════════════════════════════════════════════════════════════╣\n");
+    kprintf("       ║  ⭐ Kernel Subsystems:                                      ║\n");
+    kprintf("       ║    • Full Physical & Virtual Memory Management              ║\n");
+    kprintf("       ║    • Preemptive Multi-tasking (Ready for User-space)        ║\n");
+    kprintf("       ║    • Virtual File System (VFS) with FAT16 Support           ║\n");
+    kprintf("       ║    • PS/2 Keyboard & COM1 Serial I/O Abstraction           ║\n");
+    kprintf("       ║    • ACPI System Control & Power Management                 ║\n");
+    kprintf("       ║    • Framebuffer Graphics with Custom Font Engine           ║\n");
+    kprintf("       ║                                                             ║\n");
+    kprintf("       ╚═════════════════════════════════════════════════════════════╝\n");
+    kprintf("\n");
+}

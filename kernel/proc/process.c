@@ -121,9 +121,6 @@ struct process *process_create(const char *name, void (*entry)(void)) {
     }
 
     /* Set up initial context */
-    /* Stack grows down, so we start at top and work down */
-    uint64_t *sp = (uint64_t *)stack_top;
-
     /* Set up context for context_switch to restore */
     /* context_switch expects: r15, r14, r13, r12, rbp, rbx, rip */
     proc->context.rip = (uint64_t)process_entry_wrapper;

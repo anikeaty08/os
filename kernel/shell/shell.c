@@ -103,6 +103,8 @@ void shell_execute(const char *line) {
         cmd_cat(argc, argv);
     } else if (strcmp(cmd, "ps") == 0) {
         cmd_ps(argc, argv);
+    } else if (strcmp(cmd, "aniket") == 0) {
+        cmd_aniket(argc, argv);
     } else {
         kprintf("Unknown command: %s\n", cmd);
         kprintf("Type 'help' for available commands.\n");
@@ -113,18 +115,15 @@ void shell_execute(const char *line) {
  * Print shell prompt
  */
 static void print_prompt(void) {
-    kprintf("\nAstraOS> ");
+    kprintf("AstraOS> ");
 }
 
 /*
  * Main shell loop
  */
 void shell_run(void) {
-    kprintf("\n");
-    kprintf("========================================\n");
-    kprintf("  Welcome to AstraOS Shell\n");
-    kprintf("  Type 'help' for available commands\n");
-    kprintf("========================================\n");
+    /* Show welcome message on boot */
+    cmd_aniket(0, NULL);
 
     print_prompt();
     cmd_pos = 0;
@@ -137,13 +136,23 @@ void shell_run(void) {
             /* Would call schedule() here if we had processes */
         }
 
-        /* Get character from keyboard */
-        if (!keyboard_has_key()) {
+        /* Get character from available input sources */
+        if (!khaschar()) {
             __asm__ volatile ("hlt");
             continue;
         }
 
-        char c = keyboard_getchar();
+        char c = kgetc();
+
+        /* Basic escape sequence handling (ignore them for now) */
+        if (c == 27) { /* ESC */
+            /* Try to read the next two characters of the sequence */
+            if (khaschar()) {
+                kgetc(); /* usually '[' */
+                if (khaschar()) kgetc(); /* usually 'A', 'B', 'C', or 'D' */
+            }
+            continue;
+        }
 
         if (c == '\n') {
             /* Execute command */
@@ -155,6 +164,7 @@ void shell_run(void) {
                 shell_execute(cmd_buffer);
             }
 
+            kprintf("\n");
             print_prompt();
             cmd_pos = 0;
             cmd_buffer[0] = '\0';

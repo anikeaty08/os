@@ -249,7 +249,6 @@ static struct dirent *fat_readdir(struct vfs_node *node, uint32_t index) {
     /* Root directory or subdirectory? */
     if (node->impl == 0) {
         /* Root directory - fixed location */
-        uint32_t root_entries = g_fat->root_entries;
         uint32_t entries_per_sector = g_fat->bytes_per_sector / sizeof(struct fat16_dir_entry);
 
         for (uint32_t i = 0; i < g_fat->root_dir_sectors; i++) {

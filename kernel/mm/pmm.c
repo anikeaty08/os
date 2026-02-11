@@ -73,10 +73,20 @@ void pmm_init(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
         }
     }
 
-    /* Calculate bitmap size */
+    /* Calculate bitmap size (need to track all address space for safety) */
     highest_page = highest_addr / PAGE_SIZE;
-    total_pages = highest_page;
-    bitmap_size = (total_pages + 7) / 8;
+    bitmap_size = (highest_page + 7) / 8;
+
+    /* Count only usable memory for total_pages */
+    total_pages = 0;
+    for (uint64_t i = 0; i < memmap->entry_count; i++) {
+        struct limine_memmap_entry *entry = memmap->entries[i];
+        if (entry->type == LIMINE_MEMMAP_USABLE) {
+            uint64_t start_page = PAGE_ALIGN_UP(entry->base) / PAGE_SIZE;
+            uint64_t end_page = PAGE_ALIGN_DOWN(entry->base + entry->length) / PAGE_SIZE;
+            total_pages += (end_page - start_page);
+        }
+    }
 
     /* Find a usable region for the bitmap */
     for (uint64_t i = 0; i < memmap->entry_count; i++) {
@@ -94,7 +104,7 @@ void pmm_init(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
 
     /* Mark all pages as used initially */
     memset(bitmap, 0xFF, bitmap_size);
-    used_pages = total_pages;
+    used_pages = 0;  /* Start at 0, will be counted properly */
 
     /* Free usable memory regions */
     for (uint64_t i = 0; i < memmap->entry_count; i++) {
@@ -104,10 +114,7 @@ void pmm_init(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
             uint64_t end_page = PAGE_ALIGN_DOWN(entry->base + entry->length) / PAGE_SIZE;
 
             for (uint64_t page = start_page; page < end_page; page++) {
-                if (bitmap_test(page)) {
-                    bitmap_clear(page);
-                    used_pages--;
-                }
+                bitmap_clear(page);  /* Clear the bit to mark as free */
             }
         }
     }

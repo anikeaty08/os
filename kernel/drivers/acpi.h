@@ -88,9 +88,11 @@ struct acpi_fadt {
 
 /*
  * Initialize ACPI subsystem
+ * @param rsdp_ptr: Pointer to RSDP from bootloader (or NULL to search)
+ * @param hhdm: HHDM offset for physical-to-virtual address conversion
  * Returns true if ACPI is available
  */
-bool acpi_init(void);
+bool acpi_init(void *rsdp_ptr, uint64_t hhdm);
 
 /*
  * Power off the system using ACPI

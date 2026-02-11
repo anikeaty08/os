@@ -6,6 +6,7 @@
 #include "stdio.h"
 #include "string.h"
 #include "../drivers/serial.h"
+#include "../drivers/keyboard.h"
 
 /* Forward declaration for framebuffer output */
 extern void fb_putchar(char c) __attribute__((weak));
@@ -383,4 +384,38 @@ int ksnprintf(char *buf, size_t size, const char *format, ...) {
     buf[pos] = '\0';
     va_end(args);
     return pos;
+}
+
+/*
+ * Check if a character is available from any input source
+ */
+int khaschar(void) {
+    if (serial_available()) {
+        return 1;
+    }
+    if (keyboard_has_key()) {
+        return 1;
+    }
+    return 0;
+}
+
+/*
+ * Get a character from any input source (blocking)
+ */
+char kgetc(void) {
+    while (1) {
+        if (serial_available()) {
+            char c = serial_read();
+            /* Convert CR to LF for serial input consistency */
+            if (c == '\r') return '\n';
+            /* Handle DEL as backspace for most terminals */
+            if (c == 0x7F) return '\b';
+            return c;
+        }
+        if (keyboard_has_key()) {
+            return keyboard_getchar();
+        }
+        /* Small architectural optimization: halt until interrupt */
+        __asm__ volatile ("hlt");
+    }
 }

@@ -3,6 +3,7 @@
  * Hardware-independent interrupt request interface
  */
 
+#include <stddef.h>
 #include "irq.h"
 #include "pic.h"
 #include "cpu.h"

@@ -102,3 +102,6 @@ simple_context_switch:
 
     ; Return to new context (return address is on new stack)
     ret
+
+; Mark stack as non-executable (suppress linker warning)
+section .note.GNU-stack noalloc noexec nowrite progbits

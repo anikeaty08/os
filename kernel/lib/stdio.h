@@ -29,4 +29,14 @@ int ksnprintf(char *buf, size_t size, const char *format, ...);
  */
 int kvprintf(const char *format, va_list args);
 
+/*
+ * Check if a character is available from any input source (keyboard, serial)
+ */
+int khaschar(void);
+
+/*
+ * Get a character from any input source (blocking)
+ */
+char kgetc(void);
+
 #endif /* _ASTRA_LIB_STDIO_H */

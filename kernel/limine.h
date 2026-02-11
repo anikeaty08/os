@@ -291,7 +291,7 @@ struct limine_smp_info {
     uint32_t processor_id;
     uint32_t lapic_id;
     uint64_t reserved;
-    LIMINE_PTR(void (*)(struct limine_smp_info *)) goto_address;
+    void (*goto_address)(struct limine_smp_info *);
     uint64_t extra_argument;
 };
 

@@ -8,6 +8,8 @@
 #include "../arch/x86_64/cpu.h"
 #include "../lib/string.h"
 #include "../lib/stdio.h"
+#include "../mm/vmm.h"
+#include "../mm/pmm.h"
 
 /*
  * ACPI state
@@ -20,15 +22,39 @@ static uint16_t pm1a_cnt = 0;
 static uint16_t pm1b_cnt = 0;
 
 /*
- * HHDM offset (from main.c)
+ * Local HHDM offset for ACPI subsystem
  */
-extern uint64_t hhdm_offset;
+static uint64_t acpi_hhdm_offset = 0;
 
 /*
  * Convert physical address to virtual using HHDM
+ * Also ensures the page is mapped in the kernel page tables
  */
-static inline void *phys_to_virt(uint64_t phys) {
-    return (void *)(phys + hhdm_offset);
+static void *phys_to_virt(uint64_t phys) {
+    uint64_t virt = phys + acpi_hhdm_offset;
+
+    /* Check if this page is already mapped */
+    if (vmm_virt_to_phys(NULL, virt & ~0xFFFULL) == 0) {
+        /* Page not mapped - map it into the HHDM */
+        vmm_map_page(NULL, virt & ~0xFFFULL, phys & ~0xFFFULL, PTE_WRITABLE);
+    }
+
+    return (void *)virt;
+}
+
+/*
+ * Ensure a range of physical memory is mapped via HHDM
+ */
+static void acpi_map_range(uint64_t phys_start, size_t length) {
+    uint64_t start_page = phys_start & ~0xFFFULL;
+    uint64_t end = phys_start + length;
+
+    for (uint64_t page = start_page; page < end; page += PAGE_SIZE) {
+        uint64_t virt = page + acpi_hhdm_offset;
+        if (vmm_virt_to_phys(NULL, virt) == 0) {
+            vmm_map_page(NULL, virt, page, PTE_WRITABLE);
+        }
+    }
 }
 
 /*
@@ -46,12 +72,16 @@ static bool acpi_checksum_valid(void *table, size_t length) {
 }
 
 /*
- * Find RSDP in memory
- * RSDP can be found in:
- * - First 1KB of EBDA (Extended BIOS Data Area)
- * - BIOS ROM area (0x000E0000 - 0x000FFFFF)
+ * Find RSDP in memory (via HHDM-mapped BIOS ROM area)
+ * Only called as fallback if bootloader doesn't provide RSDP
  */
 static struct acpi_rsdp *acpi_find_rsdp(void) {
+    /* Safety check: we need a valid HHDM offset to scan BIOS ROM */
+    if (acpi_hhdm_offset == 0) {
+        kprintf("ACPI: Cannot scan BIOS ROM without HHDM offset\n");
+        return NULL;
+    }
+
     /* Search BIOS area */
     for (uint64_t addr = 0x000E0000; addr < 0x00100000; addr += 16) {
         struct acpi_rsdp *rsdp = phys_to_virt(addr);
@@ -75,11 +105,15 @@ static void *acpi_find_table(struct acpi_rsdp *rsdp, const char *signature) {
 
     /* Use XSDT if ACPI 2.0+, otherwise RSDT */
     if (rsdp->revision >= 2 && rsdp->xsdt_address) {
+        /* Map the XSDT header first to read its length */
         struct acpi_sdt_header *xsdt = phys_to_virt(rsdp->xsdt_address);
 
         if (memcmp(xsdt->signature, "XSDT", 4) != 0) {
             return NULL;
         }
+
+        /* Map the full XSDT */
+        acpi_map_range(rsdp->xsdt_address, xsdt->length);
 
         int entries = (xsdt->length - sizeof(struct acpi_sdt_header)) / 8;
         uint64_t *table_ptrs = (uint64_t *)((uint8_t *)xsdt + sizeof(struct acpi_sdt_header));
@@ -87,22 +121,30 @@ static void *acpi_find_table(struct acpi_rsdp *rsdp, const char *signature) {
         for (int i = 0; i < entries; i++) {
             struct acpi_sdt_header *header = phys_to_virt(table_ptrs[i]);
             if (memcmp(header->signature, signature, 4) == 0) {
+                /* Map the full table */
+                acpi_map_range(table_ptrs[i], header->length);
                 return header;
             }
         }
     } else {
+        /* Map the RSDT header first */
         struct acpi_sdt_header *rsdt = phys_to_virt(rsdp->rsdt_address);
 
         if (memcmp(rsdt->signature, "RSDT", 4) != 0) {
             return NULL;
         }
 
+        /* Map the full RSDT */
+        acpi_map_range(rsdp->rsdt_address, rsdt->length);
+
         int entries = (rsdt->length - sizeof(struct acpi_sdt_header)) / 4;
         uint32_t *table_ptrs = (uint32_t *)((uint8_t *)rsdt + sizeof(struct acpi_sdt_header));
 
         for (int i = 0; i < entries; i++) {
-            struct acpi_sdt_header *header = phys_to_virt(table_ptrs[i]);
+            struct acpi_sdt_header *header = phys_to_virt((uint64_t)table_ptrs[i]);
             if (memcmp(header->signature, signature, 4) == 0) {
+                /* Map the full table */
+                acpi_map_range((uint64_t)table_ptrs[i], header->length);
                 return header;
             }
         }
@@ -118,11 +160,15 @@ static void *acpi_find_table(struct acpi_rsdp *rsdp, const char *signature) {
 static bool acpi_parse_s5(struct acpi_fadt *fadt_ptr) {
     if (!fadt_ptr || !fadt_ptr->dsdt) return false;
 
-    struct acpi_sdt_header *dsdt = phys_to_virt(fadt_ptr->dsdt);
+    /* Map DSDT header first to read its length */
+    struct acpi_sdt_header *dsdt = phys_to_virt((uint64_t)fadt_ptr->dsdt);
 
     if (memcmp(dsdt->signature, "DSDT", 4) != 0) {
         return false;
     }
+
+    /* Map the full DSDT */
+    acpi_map_range((uint64_t)fadt_ptr->dsdt, dsdt->length);
 
     /* Search for "_S5_" in DSDT */
     uint8_t *ptr = (uint8_t *)dsdt;
@@ -182,10 +228,26 @@ static bool acpi_parse_s5(struct acpi_fadt *fadt_ptr) {
 
 /*
  * Initialize ACPI subsystem
+ * @param rsdp_ptr: Pointer to RSDP from bootloader (already HHDM-mapped), or NULL
+ * @param hhdm: HHDM offset for physical-to-virtual conversion
  */
-bool acpi_init(void) {
-    /* Find RSDP */
-    struct acpi_rsdp *rsdp = acpi_find_rsdp();
+bool acpi_init(void *rsdp_ptr, uint64_t hhdm) {
+    struct acpi_rsdp *rsdp;
+
+    /* Store HHDM offset for phys_to_virt conversions */
+    acpi_hhdm_offset = hhdm;
+
+    /* Map BIOS ROM area (0xE0000-0x100000) where RSDP typically lives */
+    acpi_map_range(0x000E0000, 0x00020000);
+
+    /* Use provided RSDP from bootloader if available */
+    if (rsdp_ptr) {
+        rsdp = (struct acpi_rsdp *)rsdp_ptr;
+    } else {
+        /* Fallback: search for RSDP in BIOS ROM via HHDM */
+        rsdp = acpi_find_rsdp();
+    }
+
     if (!rsdp) {
         kprintf("ACPI: RSDP not found\n");
         return false;
@@ -208,7 +270,9 @@ bool acpi_init(void) {
 
     /* Parse DSDT for S5 sleep type */
     if (!acpi_parse_s5(fadt)) {
-        kprintf("ACPI: Could not parse S5 sleep type\n");
+        kprintf("ACPI: Could not parse S5 sleep type (using defaults)\n");
+        slp_typa = 5;
+        slp_typb = 5;
     }
 
     acpi_available = true;
