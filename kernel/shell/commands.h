@@ -33,5 +33,6 @@ void cmd_aniket(int argc, char **argv);
 void cmd_status(int argc, char **argv);
 void cmd_theme(int argc, char **argv);
 void cmd_explore(int argc, char **argv);
+void cmd_view(int argc, char **argv);
 
 #endif /* _ASTRA_SHELL_COMMANDS_H */

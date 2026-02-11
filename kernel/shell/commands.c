@@ -42,6 +42,7 @@ void cmd_help(int argc, char **argv) {
     
     kprintf("\n%sFiles:%s\n", theme->info, ANSI_RESET);
     kprintf("  %sexplore%s   - Browse files (tree view)\n", theme->accent2, ANSI_RESET);
+    kprintf("  %sview%s      - View file with syntax highlighting\n", theme->accent2, ANSI_RESET);
     kprintf("  %sls%s        - List directory\n", theme->accent2, ANSI_RESET);
     kprintf("  %scat%s       - Display file\n", theme->accent2, ANSI_RESET);
     

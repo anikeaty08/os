@@ -5,6 +5,7 @@
 
 #include "shell.h"
 #include "commands.h"
+#include "login.h"
 #include "../lib/string.h"
 #include "../lib/stdio.h"
 #include "../lib/theme.h"
@@ -115,6 +116,8 @@ void shell_execute(const char *line) {
         cmd_explore(argc, argv);
     } else if (strcmp(cmd, "info") == 0) {
         cmd_version(argc, argv);  /* Alias for version */
+    } else if (strcmp(cmd, "view") == 0) {
+        cmd_view(argc, argv);
     } else {
         kprintf("Unknown command: %s\n", cmd);
         kprintf("Type 'help' for available commands.\n");
@@ -158,8 +161,20 @@ static void print_prompt(void) {
  * Main shell loop
  */
 void shell_run(void) {
-    /* Show welcome message on boot */
+    /* Show boot animation */
     boot_animation_show();
+    
+    /* Login prompt */
+    if (!login_prompt()) {
+        /* Login failed - halt system */
+        kprintf("\nSystem halted.\n");
+        while(1) __asm__ volatile ("hlt");
+    }
+    
+    /* Show welcome message */
+    login_show_welcome();
+    
+    /* Show creator credits */
     cmd_aniket(0, NULL);
 
     print_prompt();

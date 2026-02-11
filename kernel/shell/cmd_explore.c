@@ -17,7 +17,7 @@ void cmd_explore(int argc, char **argv) {
     kprintf("%s📁 %s%s (root)%s\n", theme->info, ANSI_BOLD, path, ANSI_RESET);
     
     /* Try to read directory */
-    vfs_node_t *node = vfs_open(path);
+    struct vfs_node *node = vfs_open(path);
     
     if (!node) {
         kprintf("%sError:%s Directory not found: %s\n", 
@@ -37,8 +37,9 @@ void cmd_explore(int argc, char **argv) {
     int dir_count = 0;
     int file_count = 0;
     uint64_t total_size = 0;
+    uint32_t index = 0;
     
-    while ((entry = vfs_readdir(node)) != NULL) {
+    while ((entry = vfs_readdir(node, index++)) != NULL) {
         /* Skip . and .. */
         if (strcmp(entry->name, ".") == 0 || strcmp(entry->name, "..") == 0) {
             continue;
@@ -46,8 +47,17 @@ void cmd_explore(int argc, char **argv) {
         
         /* Get file info */
         char full_path[256];
-        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->name);
-        vfs_node_t *child = vfs_open(full_path);
+        int path_len = strlen(path);
+        int name_len = strlen(entry->name);
+        
+        /* Manual string concatenation to avoid snprintf */
+        int i = 0;
+        for (int j = 0; j < path_len && i < 255; j++) full_path[i++] = path[j];
+        if (i < 255 && path[path_len-1] != '/') full_path[i++] = '/';
+        for (int j = 0; j < name_len && i < 255; j++) full_path[i++] = entry->name[j];
+        full_path[i] = '\0';
+        
+        struct vfs_node *child = vfs_open(full_path);
         
         if (child) {
             if (child->type == VFS_DIRECTORY) {
