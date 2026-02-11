@@ -7,8 +7,10 @@
 #include "commands.h"
 #include "../lib/string.h"
 #include "../lib/stdio.h"
+#include "../lib/theme.h"
 #include "../drivers/keyboard.h"
 #include "../drivers/pit.h"
+#include "../drivers/boot_animation.h"
 
 /*
  * Command buffer
@@ -123,7 +125,33 @@ void shell_execute(const char *line) {
  * Print shell prompt
  */
 static void print_prompt(void) {
-    kprintf("AstraOS> ");
+    const ColorTheme *theme = theme_get_active();
+    
+    /* Calculate uptime */
+    uint64_t uptime_ms = pit_get_ticks() * 10;
+    uint64_t seconds = uptime_ms / 1000;
+    uint64_t minutes = seconds / 60;
+    uint64_t hours = minutes / 60;
+    seconds %= 60;
+    minutes %= 60;
+    
+    /* Professional two-line prompt */
+    kprintf("%s┌─[%s%saniket%s%s@%s%sAstraOS%s%s]─[%s~%s]─[%s↑ %02llu:%02llu:%02llu%s]%s\n",
+            theme->accent1,                    /* ┌─[ */
+            ANSI_RESET, theme->prompt_user, "aniket", ANSI_RESET,  /* username */
+            theme->accent1,                    /* @ */
+            theme->prompt_host, "AstraOS", ANSI_RESET,  /* hostname */
+            theme->accent1,                    /* ]─[ */
+            theme->prompt_dir, ANSI_RESET,     /* ~ */
+            theme->accent1,                    /* ]─[ */
+            theme->info, hours, minutes, seconds, ANSI_RESET,  /* uptime */
+            ANSI_RESET);
+    
+    kprintf("%s└─%s%s❯%s ",
+            theme->accent1,
+            ANSI_RESET,
+            theme->prompt_symbol,
+            ANSI_RESET);
 }
 
 /*
@@ -131,6 +159,7 @@ static void print_prompt(void) {
  */
 void shell_run(void) {
     /* Show welcome message on boot */
+    boot_animation_show();
     cmd_aniket(0, NULL);
 
     print_prompt();
