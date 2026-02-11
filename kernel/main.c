@@ -28,6 +28,7 @@
 #include "fs/vfs.h"
 #include "fs/fat.h"
 #include "shell/shell.h"
+#include "lib/theme.h"
 
 /*
  * Limine Request Markers
@@ -611,6 +612,9 @@ void kmain(void) {
 
     fb_puts("\nAll systems initialized successfully!\n");
     fb_puts("Starting shell...\n");
+
+    /* Initialize theme system */
+    theme_init();
 
     /* Start the interactive shell */
     shell_run();

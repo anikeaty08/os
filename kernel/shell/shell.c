@@ -105,6 +105,14 @@ void shell_execute(const char *line) {
         cmd_ps(argc, argv);
     } else if (strcmp(cmd, "aniket") == 0) {
         cmd_aniket(argc, argv);
+    } else if (strcmp(cmd, "status") == 0) {
+        cmd_status(argc, argv);
+    } else if (strcmp(cmd, "theme") == 0) {
+        cmd_theme(argc, argv);
+    } else if (strcmp(cmd, "explore") == 0) {
+        cmd_explore(argc, argv);
+    } else if (strcmp(cmd, "info") == 0) {
+        cmd_version(argc, argv);  /* Alias for version */
     } else {
         kprintf("Unknown command: %s\n", cmd);
         kprintf("Type 'help' for available commands.\n");

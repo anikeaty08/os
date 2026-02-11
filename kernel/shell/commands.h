@@ -29,4 +29,9 @@ void cmd_cat(int argc, char **argv);
 void cmd_ps(int argc, char **argv);
 void cmd_aniket(int argc, char **argv);
 
+/* Phase 1: New AstraOS Commands */
+void cmd_status(int argc, char **argv);
+void cmd_theme(int argc, char **argv);
+void cmd_explore(int argc, char **argv);
+
 #endif /* _ASTRA_SHELL_COMMANDS_H */

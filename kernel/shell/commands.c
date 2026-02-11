@@ -6,6 +6,7 @@
 #include "commands.h"
 #include "../lib/stdio.h"
 #include "../lib/string.h"
+#include "../lib/theme.h"
 #include "../mm/pmm.h"
 #include "../mm/heap.h"
 #include "../drivers/pit.h"
@@ -27,22 +28,40 @@ void cmd_help(int argc, char **argv) {
     (void)argc;
     (void)argv;
 
-    kprintf("\nAvailable commands:\n");
-    kprintf("-------------------\n");
-    kprintf("  help      - Show this help message\n");
-    kprintf("  clear     - Clear the screen\n");
-    kprintf("  echo      - Print text to screen\n");
-    kprintf("  mem       - Display memory information\n");
-    kprintf("  uptime    - Show system uptime\n");
-    kprintf("  cpuinfo   - Display CPU information\n");
-    kprintf("  version   - Show AstraOS version\n");
-    kprintf("  test      - Run system tests\n");
-    kprintf("  ls        - List directory contents\n");
-    kprintf("  cat       - Display file contents\n");
-    kprintf("  ps        - List processes\n");
-    kprintf("  reboot    - Restart the system\n");
-    kprintf("  shutdown  - Halt the system\n");
-    kprintf("  aniket    - About the creator\n");
+    const ColorTheme *theme = theme_get_active();
+
+    kprintf("\n%s%sAstraOS Commands%s%s\n", ANSI_BOLD, theme->accent1, ANSI_RESET, ANSI_RESET);
+    kprintf("%s═══════════════════════════════════════%s\n", theme->accent1, ANSI_RESET);
+    
+    kprintf("\n%sSystem:%s\n", theme->info, ANSI_RESET);
+    kprintf("  %sstatus%s    - Live system dashboard\n", theme->accent2, ANSI_RESET);
+    kprintf("  %sinfo%s      - System information\n", theme->accent2, ANSI_RESET);
+    kprintf("  %smem%s       - Memory usage\n", theme->accent2, ANSI_RESET);
+    kprintf("  %suptime%s    - System uptime\n", theme->accent2, ANSI_RESET);
+    kprintf("  %scpuinfo%s   - CPU information\n", theme->accent2, ANSI_RESET);
+    
+    kprintf("\n%sFiles:%s\n", theme->info, ANSI_RESET);
+    kprintf("  %sexplore%s   - Browse files (tree view)\n", theme->accent2, ANSI_RESET);
+    kprintf("  %sls%s        - List directory\n", theme->accent2, ANSI_RESET);
+    kprintf("  %scat%s       - Display file\n", theme->accent2, ANSI_RESET);
+    
+    kprintf("\n%sCustomization:%s\n", theme->info, ANSI_RESET);
+    kprintf("  %stheme%s     - Change color theme\n", theme->accent2, ANSI_RESET);
+    kprintf("  %sclear%s     - Clear screen\n", theme->accent2, ANSI_RESET);
+    
+    kprintf("\n%sUtilities:%s\n", theme->info, ANSI_RESET);
+    kprintf("  %secho%s      - Print text\n", theme->accent2, ANSI_RESET);
+    kprintf("  %sps%s        - List processes\n", theme->accent2, ANSI_RESET);
+    kprintf("  %stest%s      - Run tests\n", theme->accent2, ANSI_RESET);
+    kprintf("  %sversion%s   - Show version\n", theme->accent2, ANSI_RESET);
+    kprintf("  %shelp%s      - This help\n", theme->accent2, ANSI_RESET);
+    
+    kprintf("\n%sPower:%s\n", theme->info, ANSI_RESET);
+    kprintf("  %sreboot%s    - Restart system\n", theme->accent2, ANSI_RESET);
+    kprintf("  %sshutdown%s  - Power off\n", theme->accent2, ANSI_RESET);
+    
+    kprintf("\n%sAbout:%s\n", theme->info, ANSI_RESET);
+    kprintf("  %saniket%s    - Creator credits\n", theme->accent2, ANSI_RESET);
     kprintf("\n");
 }
 
