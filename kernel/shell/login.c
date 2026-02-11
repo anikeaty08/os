@@ -11,7 +11,16 @@
 #include "../drivers/pit.h"
 
 /* Simple delay for animations */
+/* Simple delay for animations */
 #include "../drivers/graphics.h"
+
+static void delay_ms(uint32_t ms) {
+    uint64_t start = pit_get_ticks();
+    uint64_t target = start + (ms / 10);
+    while (pit_get_ticks() < target) {
+        __asm__ volatile ("hlt");
+    }
+}
 
 static void draw_centered_box(uint32_t width, uint32_t height, const ColorTheme *theme) {
     uint32_t start_x = fb_center_x("") - (width / 2);
@@ -93,7 +102,7 @@ bool login_prompt(void) {
         /* Error Message Position */
         if (attempts > 0) {
             char err[64];
-            snprintf(err, 64, "Login failed! %d/%d attempts", attempts, max_attempts); // Using safe snprintf
+            ksnprintf(err, 64, "Login failed! %d/%d attempts", attempts, max_attempts);
             set_cursor_in_box(box_w, box_h, (box_w - strlen(err))/2, 11);
             kprintf("%s%s%s", theme->error, err, ANSI_RESET);
         }
@@ -198,11 +207,9 @@ void login_show_welcome(void) {
     const char *title = "🚀 ASTRAOS OPERATING SYSTEM 🚀";
     /* Title Row with proper padding */
     /* Total inner width = box_w - 2 */
-    /* Title len needs to be centered in inner width */
+    
     uint32_t inner_w = box_w - 2;
-    uint32_t title_len = 30; /* Manual length count for "🚀 ASTRAOS OPERATING SYSTEM 🚀" roughly */
-                             /* Actually standard ASCII length is simpler: just the text */
-                             /* But wait, rocket emoji is multibyte. Let's simplify title padding manually */
+    /* Manual/visual padding logic used below instead of title_len calc */
     
     for(uint32_t x=0; x<start_x; x++) kprintf(" ");
     kprintf("%s║%s", theme->info, ANSI_RESET);
@@ -226,13 +233,14 @@ void login_show_welcome(void) {
     kprintf("╣%s\n", ANSI_RESET);
     
     /* Info Lines: Box width 64 -> inner 62 chars */
-    char user_line[64];
-    /* Using safe snprintf to avoid buffer overflows if username is long */
+    /* Using manually constructed arrays for dynamic content */
     /* Since we don't have standard snprintf, we construct carefully or assume short username */
     /* But wait, we have extended ASCII box drawing... let's keep it simple */
     
     /* We can't initialize VLA in this context easily in kernel C without standard libs sometimes */
+    /* We can't initialize VLA in this context easily in kernel C without standard libs sometimes */
     const char *current_user_name = user_get_current_name();
+    if (!current_user_name) current_user_name = "Unknown";
     
     /* Manually constructing the lines array to include dynamic content */
     /* We'll just print them one by one instead of an array */

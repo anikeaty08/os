@@ -332,7 +332,7 @@ uint32_t fb_get_height(void) {
  */
 uint32_t fb_center_x(const char *text) {
     uint32_t screen_w = fb_get_width();
-    uint32_t screen_w = fb_get_width();
+
     
     /* Strip ANSI codes for length calculation (simplified) */
     uint32_t visible_len = 0;

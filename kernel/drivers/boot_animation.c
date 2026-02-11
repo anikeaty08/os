@@ -29,7 +29,8 @@ void boot_animation_show(void) {
     const ColorTheme *theme = theme_get_active();
     
     /* Clear screen first */
-    kprintf("\033[2J\033[H"); /* ANSI clear screen */
+    /* Clear screen first */
+    fb_clear();
     
     /* Center the Logo */
     print_centered("      █████╗ ███████╗████████╗██████╗  █████╗     ");
@@ -55,18 +56,43 @@ void boot_animation_show(void) {
     };
     
     for (int i = 0; i < 5; i++) {
-        kprintf("    %s%-25s%s [", theme->info, stages[i], ANSI_RESET);
-        
         /* Animated progress bar */
         for (int j = 0; j <= 20; j++) {
-            if (j > 0) {
-                kprintf("\r    %s%-25s%s [", theme->info, stages[i], ANSI_RESET);
-            }
+            
+            /* Clear current line first - using blank spaces for simplicity instead of just \r */
+            kprintf("\r");
+            
+            uint32_t screen_w = fb_get_width();
+            /* Total width: ~25 label + 2 brackets + 20 bar + 6 percent = 53? */
+            /* Actually: 
+               Label: 25 chars
+               " [" : 2 chars
+               Bar: 20 chars
+               "] " : 2 chars
+               "100%": 4 chars
+               Total: 53 chars
+            */
+            uint32_t content_w = 55;
+            uint32_t pad = (screen_w - content_w) / 2;
+            
+            for(uint32_t p=0; p<pad; p++) kprintf(" ");
+            
+            /* Print Label + Bar */
+            /* Using manual padding for label to avoid %-25s issues if any */
+            kprintf("%s", theme->info);
+            kprintf("%s", stages[i]);
+            kprintf("%s", ANSI_RESET);
+            
+            int label_len = strlen(stages[i]);
+            for(int s=0; s<(25 - label_len); s++) kprintf(" ");
+            
+            kprintf(" [");
             
             kprintf("%s", theme->success);
             for (int k = 0; k < j; k++) kprintf("█");
             kprintf("%s", ANSI_RESET);
             for (int k = j; k < 20; k++) kprintf("░");
+            
             kprintf("] %s%d%%%s", theme->success, (j * 100) / 20, ANSI_RESET);
             
             delay_ms(30);
