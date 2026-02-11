@@ -6,6 +6,7 @@
 #include "shell.h"
 #include "commands.h"
 #include "login.h"
+#include "user.h"
 #include "../lib/string.h"
 #include "../lib/stdio.h"
 #include "../lib/theme.h"
@@ -129,6 +130,7 @@ void shell_execute(const char *line) {
  */
 static void print_prompt(void) {
     const ColorTheme *theme = theme_get_active();
+    const char *username = user_get_current_name();
     
     /* Calculate uptime */
     uint64_t uptime_ms = pit_get_ticks() * 10;
@@ -139,9 +141,9 @@ static void print_prompt(void) {
     minutes %= 60;
     
     /* Professional two-line prompt */
-    kprintf("%s┌─[%s%saniket%s%s@%s%sAstraOS%s%s]─[%s~%s]─[%s↑ %02llu:%02llu:%02llu%s]%s\n",
+    kprintf("%s┌─[%s%s%s%s@%s%sAstraOS%s%s]─[%s~%s]─[%s↑ %02llu:%02llu:%02llu%s]%s\n",
             theme->accent1,                    /* ┌─[ */
-            ANSI_RESET, theme->prompt_user, "aniket", ANSI_RESET,  /* username */
+            ANSI_RESET, theme->prompt_user, username, ANSI_RESET,  /* username */
             theme->accent1,                    /* @ */
             theme->prompt_host, "AstraOS", ANSI_RESET,  /* hostname */
             theme->accent1,                    /* ]─[ */
@@ -161,6 +163,9 @@ static void print_prompt(void) {
  * Main shell loop
  */
 void shell_run(void) {
+    /* Initialize user system */
+    user_system_init();
+    
     /* Show boot animation */
     boot_animation_show();
     

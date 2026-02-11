@@ -151,13 +151,14 @@ bool login_prompt(void) {
 
 void login_show_welcome(void) {
     const ColorTheme *theme = theme_get_active();
+    const char *username = user_get_current_name();
     
     kprintf("\033[2J\033[H");
     kprintf("\n\n");
     kprintf("%s        ╔═══════════════════════════════════════╗%s\n", theme->accent1, ANSI_RESET);
     kprintf("%s        ║                                       ║%s\n", theme->accent1, ANSI_RESET);
     kprintf("%s        ║%s     %s✓ Welcome back, %s!%s        %s║%s\n",
-            theme->accent1, ANSI_RESET, theme->success, LOGIN_USERNAME, ANSI_RESET, theme->accent1, ANSI_RESET);
+            theme->accent1, ANSI_RESET, theme->success, username, ANSI_RESET, theme->accent1, ANSI_RESET);
     kprintf("%s        ║                                       ║%s\n", theme->accent1, ANSI_RESET);
     kprintf("%s        ║%s   %sLoading your environment...%s       %s║%s\n",
             theme->accent1, ANSI_RESET, theme->info, ANSI_RESET, theme->accent1, ANSI_RESET);
