@@ -45,6 +45,7 @@ void cmd_help(int argc, char **argv) {
     kprintf("  %sview%s      - View file with syntax highlighting\n", theme->accent2, ANSI_RESET);
     kprintf("  %sls%s        - List directory\n", theme->accent2, ANSI_RESET);
     kprintf("  %scat%s       - Display file\n", theme->accent2, ANSI_RESET);
+    kprintf("  %srun%s       - Run flat user binary\n", theme->accent2, ANSI_RESET);
     
     kprintf("\n%sCustomization:%s\n", theme->info, ANSI_RESET);
     kprintf("  %stheme%s     - Change color theme\n", theme->accent2, ANSI_RESET);
@@ -317,6 +318,71 @@ void cmd_cat(int argc, char **argv) {
     kprintf("\n");
 
     vfs_close(node);
+}
+
+/*
+ * run - Start a flat ring-3 user binary from the filesystem
+ */
+void cmd_run(int argc, char **argv) {
+    if (argc < 2) {
+        kprintf("Usage: run <flat-binary>\n");
+        return;
+    }
+
+    struct vfs_node *node = vfs_open(argv[1]);
+    if (!node) {
+        kprintf("run: %s: No such file or directory\n", argv[1]);
+        return;
+    }
+
+    if (vfs_is_directory(node)) {
+        kprintf("run: %s: Is a directory\n", argv[1]);
+        vfs_close(node);
+        return;
+    }
+
+    uint64_t size = vfs_size(node);
+    if (size == 0 || size > 1024 * 1024) {
+        kprintf("run: %s: unsupported binary size\n", argv[1]);
+        vfs_close(node);
+        return;
+    }
+
+    uint8_t *image = kmalloc((size_t)size);
+    if (!image) {
+        kprintf("run: out of memory\n");
+        vfs_close(node);
+        return;
+    }
+
+    uint64_t offset = 0;
+    while (offset < size) {
+        size_t to_read = 512;
+        if (to_read > size - offset) {
+            to_read = (size_t)(size - offset);
+        }
+
+        int bytes = vfs_read(node, offset, to_read, image + offset);
+        if (bytes <= 0) {
+            kprintf("run: failed reading %s\n", argv[1]);
+            kfree(image);
+            vfs_close(node);
+            return;
+        }
+
+        offset += (uint64_t)bytes;
+    }
+
+    struct process *proc = process_create_user(argv[1], image, (size_t)size);
+    kfree(image);
+    vfs_close(node);
+
+    if (!proc) {
+        kprintf("run: failed to create user process\n");
+        return;
+    }
+
+    kprintf("Started user process %s as PID %llu\n", argv[1], proc->pid);
 }
 
 /*

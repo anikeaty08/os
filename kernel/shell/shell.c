@@ -105,6 +105,8 @@ void shell_execute(const char *line) {
         cmd_ls(argc, argv);
     } else if (strcmp(cmd, "cat") == 0 || strcmp(cmd, "type") == 0) {
         cmd_cat(argc, argv);
+    } else if (strcmp(cmd, "run") == 0) {
+        cmd_run(argc, argv);
     } else if (strcmp(cmd, "ps") == 0) {
         cmd_ps(argc, argv);
     } else if (strcmp(cmd, "aniket") == 0) {
