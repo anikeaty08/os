@@ -159,6 +159,10 @@ static char process_scancode(uint8_t scancode) {
             return 0;
     }
 
+    if (scancode >= 128) {
+        return 0;
+    }
+
     /* Get ASCII character */
     char c;
     if (shift_pressed) {

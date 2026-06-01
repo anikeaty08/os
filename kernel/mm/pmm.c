@@ -17,6 +17,7 @@ static uint64_t bitmap_size = 0;      /* Size in bytes */
 static uint64_t total_pages = 0;
 static uint64_t used_pages = 0;
 static uint64_t highest_page = 0;
+static int pmm_ready = 0;
 
 /*
  * HHDM offset for converting physical to virtual
@@ -62,6 +63,12 @@ static inline uint64_t virt_to_phys(void *virt) {
  */
 void pmm_init(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
     hhdm = hhdm_offset;
+    bitmap = NULL;
+    bitmap_size = 0;
+    total_pages = 0;
+    used_pages = 0;
+    highest_page = 0;
+    pmm_ready = 0;
 
     /* Find highest usable address to determine bitmap size */
     uint64_t highest_addr = 0;
@@ -74,7 +81,7 @@ void pmm_init(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
     }
 
     /* Calculate bitmap size (need to track all address space for safety) */
-    highest_page = highest_addr / PAGE_SIZE;
+    highest_page = PAGE_ALIGN_UP(highest_addr) / PAGE_SIZE;
     bitmap_size = (highest_page + 7) / 8;
 
     /* Count only usable memory for total_pages */
@@ -84,16 +91,23 @@ void pmm_init(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
         if (entry->type == LIMINE_MEMMAP_USABLE) {
             uint64_t start_page = PAGE_ALIGN_UP(entry->base) / PAGE_SIZE;
             uint64_t end_page = PAGE_ALIGN_DOWN(entry->base + entry->length) / PAGE_SIZE;
-            total_pages += (end_page - start_page);
+            if (end_page > start_page) {
+                total_pages += (end_page - start_page);
+            }
         }
     }
 
     /* Find a usable region for the bitmap */
     for (uint64_t i = 0; i < memmap->entry_count; i++) {
         struct limine_memmap_entry *entry = memmap->entries[i];
-        if (entry->type == LIMINE_MEMMAP_USABLE && entry->length >= bitmap_size) {
-            bitmap = phys_to_virt(entry->base);
-            break;
+        if (entry->type == LIMINE_MEMMAP_USABLE) {
+            uint64_t bitmap_phys = PAGE_ALIGN_UP(entry->base);
+            uint64_t entry_end = entry->base + entry->length;
+
+            if (bitmap_phys <= entry_end && entry_end - bitmap_phys >= bitmap_size) {
+                bitmap = phys_to_virt(bitmap_phys);
+                break;
+            }
         }
     }
 
@@ -136,12 +150,16 @@ void pmm_init(struct limine_memmap_response *memmap, uint64_t hhdm_offset) {
         bitmap_set(0);
         used_pages++;
     }
+
+    pmm_ready = 1;
 }
 
 /*
  * Allocate single page
  */
 void *pmm_alloc_page(void) {
+    if (!pmm_ready) return NULL;
+
     uint64_t flags;
     spinlock_acquire_irqsave(&pmm_lock, &flags);
 
@@ -163,8 +181,10 @@ void *pmm_alloc_page(void) {
  * Allocate contiguous pages
  */
 void *pmm_alloc_pages(size_t count) {
+    if (!pmm_ready) return NULL;
     if (count == 0) return NULL;
     if (count == 1) return pmm_alloc_page();
+    if (count > highest_page) return NULL;
 
     uint64_t flags;
     spinlock_acquire_irqsave(&pmm_lock, &flags);
@@ -202,6 +222,7 @@ void *pmm_alloc_pages(size_t count) {
  * Free single page
  */
 void pmm_free_page(void *page) {
+    if (!pmm_ready) return;
     if (!page) return;
 
     uint64_t page_num = (uint64_t)page / PAGE_SIZE;
@@ -222,6 +243,7 @@ void pmm_free_page(void *page) {
  * Free multiple pages
  */
 void pmm_free_pages(void *page, size_t count) {
+    if (!pmm_ready) return;
     if (!page || count == 0) return;
 
     uint64_t start = (uint64_t)page / PAGE_SIZE;
@@ -248,6 +270,7 @@ uint64_t pmm_get_total_memory(void) {
 }
 
 uint64_t pmm_get_free_memory(void) {
+    if (used_pages > total_pages) return 0;
     return (total_pages - used_pages) * PAGE_SIZE;
 }
 

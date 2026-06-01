@@ -149,17 +149,6 @@ void process_exit(int exit_code) {
     if (current_process && current_process->pid != 0) {
         current_process->exit_code = exit_code;
         current_process->state = PROCESS_ZOMBIE;
-
-        /* Free kernel stack */
-        if (current_process->kernel_stack_base) {
-            extern uint64_t hhdm_offset;
-            void *phys = (void *)(current_process->kernel_stack_base - hhdm_offset);
-            size_t pages = (KERNEL_STACK_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
-            pmm_free_pages(phys, pages);
-        }
-
-        /* Mark slot as unused */
-        current_process->state = PROCESS_UNUSED;
     }
 
     spinlock_release_irqrestore(&process_lock, flags);
@@ -171,6 +160,38 @@ void process_exit(int exit_code) {
     for (;;) {
         __asm__ volatile ("hlt");
     }
+}
+
+/*
+ * Reap zombie processes whose kernel stacks are no longer active
+ */
+void process_reap_zombies(void) {
+    uint64_t flags;
+    spinlock_acquire_irqsave(&process_lock, &flags);
+
+    struct process *current = current_process;
+
+    for (int i = 1; i < MAX_PROCESSES; i++) {
+        struct process *proc = &process_table[i];
+
+        if (proc->state != PROCESS_ZOMBIE || proc == current) {
+            continue;
+        }
+
+        /* Free kernel stack */
+        if (proc->kernel_stack_base) {
+            extern uint64_t hhdm_offset;
+            void *phys = (void *)(proc->kernel_stack_base - hhdm_offset);
+            size_t pages = (KERNEL_STACK_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
+            pmm_free_pages(phys, pages);
+        }
+
+        /* Mark slot as unused */
+        memset(proc, 0, sizeof(*proc));
+        proc->state = PROCESS_UNUSED;
+    }
+
+    spinlock_release_irqrestore(&process_lock, flags);
 }
 
 /*

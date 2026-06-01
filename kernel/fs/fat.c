@@ -40,6 +40,9 @@ struct fat16_fs {
     uint16_t *fat_table;
 };
 
+#define FAT16_MIN_CLUSTERS 4085
+#define FAT16_MAX_CLUSTERS 65524
+
 /* Global filesystem instance */
 static struct fat16_fs *g_fat = NULL;
 
@@ -56,7 +59,103 @@ static int next_node = 0;
  */
 static int fat_read_sectors(uint32_t lba, uint32_t count, void *buffer) {
     if (!g_fat) return -1;
+    if (count == 0) return 0;
+    if (lba >= g_fat->total_sectors) return -1;
+    if (count > g_fat->total_sectors - lba) return -1;
     return ata_read(g_fat->drive, g_fat->partition_lba + lba, count, buffer);
+}
+
+static bool fat_is_power_of_two(uint32_t value) {
+    return value != 0 && (value & (value - 1)) == 0;
+}
+
+static uint32_t fat_bpb_total_sectors(const struct fat16_bpb *bpb) {
+    if (bpb->total_sectors_16 != 0) {
+        return bpb->total_sectors_16;
+    }
+    return bpb->total_sectors_32;
+}
+
+static bool fat_bpb_validate(const struct fat16_bpb *bpb, struct fat16_fs *fs) {
+    uint32_t root_dir_bytes;
+    uint32_t fat_sectors;
+    uint32_t root_dir_sectors;
+    uint32_t data_start_lba;
+    uint32_t data_sectors;
+    uint32_t total_clusters;
+    uint32_t fat_entries;
+
+    if (!bpb || !fs) return false;
+
+    if (bpb->bytes_per_sector != 512) return false;
+    if (!fat_is_power_of_two(bpb->sectors_per_cluster)) return false;
+    if (bpb->sectors_per_cluster > 64) return false;
+    if (bpb->reserved_sectors == 0) return false;
+    if (bpb->num_fats == 0 || bpb->num_fats > 2) return false;
+    if (bpb->root_entries == 0) return false;
+    if (bpb->sectors_per_fat == 0) return false;
+    if (bpb->total_sectors_16 != 0 && bpb->total_sectors_32 != 0) return false;
+
+    fs->bytes_per_sector = bpb->bytes_per_sector;
+    fs->sectors_per_cluster = bpb->sectors_per_cluster;
+    fs->reserved_sectors = bpb->reserved_sectors;
+    fs->num_fats = bpb->num_fats;
+    fs->root_entries = bpb->root_entries;
+    fs->sectors_per_fat = bpb->sectors_per_fat;
+    fs->total_sectors = fat_bpb_total_sectors(bpb);
+
+    if (fs->total_sectors == 0) return false;
+
+    root_dir_bytes = (uint32_t)fs->root_entries * sizeof(struct fat16_dir_entry);
+    if (root_dir_bytes == 0) return false;
+    if (root_dir_bytes % fs->bytes_per_sector != 0) return false;
+
+    fat_sectors = (uint32_t)fs->num_fats * fs->sectors_per_fat;
+    if (fat_sectors / fs->num_fats != fs->sectors_per_fat) return false;
+    if (fs->reserved_sectors > fs->total_sectors) return false;
+    if (fat_sectors > fs->total_sectors - fs->reserved_sectors) return false;
+
+    root_dir_sectors = root_dir_bytes / fs->bytes_per_sector;
+    if (root_dir_sectors == 0) return false;
+
+    data_start_lba = (uint32_t)fs->reserved_sectors + fat_sectors + root_dir_sectors;
+    if (data_start_lba <= fs->reserved_sectors) return false;
+    if (data_start_lba >= fs->total_sectors) return false;
+
+    data_sectors = fs->total_sectors - data_start_lba;
+    if (data_sectors < fs->sectors_per_cluster) return false;
+
+    total_clusters = data_sectors / fs->sectors_per_cluster;
+    if (total_clusters < FAT16_MIN_CLUSTERS) return false;
+    if (total_clusters > FAT16_MAX_CLUSTERS) return false;
+
+    fat_entries = ((uint32_t)fs->sectors_per_fat * fs->bytes_per_sector) /
+                  sizeof(uint16_t);
+    if (fat_entries < total_clusters + 2) return false;
+
+    fs->fat_start_lba = fs->reserved_sectors;
+    fs->root_dir_start_lba = fs->fat_start_lba + fat_sectors;
+    fs->root_dir_sectors = root_dir_sectors;
+    fs->data_start_lba = data_start_lba;
+    fs->total_clusters = total_clusters;
+
+    return true;
+}
+
+static bool fat_is_lfn_entry(const struct fat16_dir_entry *entry) {
+    return (entry->attributes & 0x3F) == FAT_ATTR_LFN;
+}
+
+static bool fat_is_valid_data_cluster(uint16_t cluster) {
+    if (!g_fat) return false;
+    return cluster >= 2 && cluster < g_fat->total_clusters + 2;
+}
+
+static bool fat_should_skip_entry(const struct fat16_dir_entry *entry) {
+    if ((uint8_t)entry->name[0] == 0xE5) return true;
+    if (fat_is_lfn_entry(entry)) return true;
+    if (entry->attributes & FAT_ATTR_VOLUME_ID) return true;
+    return false;
 }
 
 /*
@@ -64,7 +163,7 @@ static int fat_read_sectors(uint32_t lba, uint32_t count, void *buffer) {
  */
 static uint16_t fat_get_next_cluster(uint16_t cluster) {
     if (!g_fat || !g_fat->fat_table) return FAT16_END_MAX;
-    if (cluster < 2 || cluster >= g_fat->total_clusters + 2) return FAT16_END_MAX;
+    if (!fat_is_valid_data_cluster(cluster)) return FAT16_END_MAX;
     return g_fat->fat_table[cluster];
 }
 
@@ -79,7 +178,7 @@ static bool fat_is_end_cluster(uint16_t cluster) {
  * Convert cluster number to LBA
  */
 static uint32_t fat_cluster_to_lba(uint16_t cluster) {
-    if (!g_fat || cluster < 2) return 0;
+    if (!fat_is_valid_data_cluster(cluster)) return 0;
     return g_fat->data_start_lba + (cluster - 2) * g_fat->sectors_per_cluster;
 }
 
@@ -188,13 +287,14 @@ static int fat_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t
 
     /* Check bounds */
     if (offset >= node->size) return 0;
-    if (offset + size > node->size) {
+    if (size > node->size - offset) {
         size = node->size - offset;
     }
 
     uint16_t cluster = (uint16_t)node->impl;
     uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
     uint32_t bytes_read = 0;
+    uint32_t traversed = 0;
 
     /* Allocate sector buffer */
     uint8_t *sector_buf = kmalloc(cluster_size);
@@ -202,12 +302,22 @@ static int fat_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t
 
     /* Skip to starting cluster */
     while (offset >= cluster_size && !fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            kfree(sector_buf);
+            return -1;
+        }
         offset -= cluster_size;
         cluster = fat_get_next_cluster(cluster);
+        traversed++;
     }
 
     /* Read data */
     while (bytes_read < size && !fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            kfree(sector_buf);
+            return -1;
+        }
+
         /* Read cluster */
         uint32_t lba = fat_cluster_to_lba(cluster);
         if (fat_read_sectors(lba, g_fat->sectors_per_cluster, sector_buf) < 0) {
@@ -227,6 +337,7 @@ static int fat_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t
         offset = 0;  /* After first cluster, start from beginning */
 
         cluster = fat_get_next_cluster(cluster);
+        traversed++;
     }
 
     kfree(sector_buf);
@@ -268,11 +379,8 @@ static struct dirent *fat_readdir(struct vfs_node *node, uint32_t index) {
                     return NULL;
                 }
 
-                /* Skip deleted entries */
-                if ((uint8_t)entry->name[0] == 0xE5) continue;
-
-                /* Skip volume label and LFN entries */
-                if (entry->attributes & FAT_ATTR_VOLUME_ID) continue;
+                /* Skip deleted, volume label, and LFN entries */
+                if (fat_should_skip_entry(entry)) continue;
 
                 if (entry_count == index) {
                     fat_name_to_string(entry, g_dirent.name);
@@ -289,6 +397,7 @@ static struct dirent *fat_readdir(struct vfs_node *node, uint32_t index) {
         uint16_t cluster = (uint16_t)node->impl;
         uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
         uint32_t entries_per_cluster = cluster_size / sizeof(struct fat16_dir_entry);
+        uint32_t traversed = 0;
 
         uint8_t *cluster_buf = kmalloc(cluster_size);
         if (!cluster_buf) {
@@ -297,6 +406,12 @@ static struct dirent *fat_readdir(struct vfs_node *node, uint32_t index) {
         }
 
         while (!fat_is_end_cluster(cluster)) {
+            if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+                kfree(cluster_buf);
+                kfree(sector_buf);
+                return NULL;
+            }
+
             uint32_t lba = fat_cluster_to_lba(cluster);
             if (fat_read_sectors(lba, g_fat->sectors_per_cluster, cluster_buf) < 0) {
                 kfree(cluster_buf);
@@ -316,11 +431,8 @@ static struct dirent *fat_readdir(struct vfs_node *node, uint32_t index) {
                     return NULL;
                 }
 
-                /* Skip deleted entries */
-                if ((uint8_t)entry->name[0] == 0xE5) continue;
-
-                /* Skip volume label and LFN entries */
-                if (entry->attributes & FAT_ATTR_VOLUME_ID) continue;
+                /* Skip deleted, volume label, and LFN entries */
+                if (fat_should_skip_entry(entry)) continue;
 
                 if (entry_count == index) {
                     fat_name_to_string(entry, g_dirent.name);
@@ -334,6 +446,7 @@ static struct dirent *fat_readdir(struct vfs_node *node, uint32_t index) {
             }
 
             cluster = fat_get_next_cluster(cluster);
+            traversed++;
         }
 
         kfree(cluster_buf);
@@ -377,11 +490,8 @@ static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name) {
                     return NULL;
                 }
 
-                /* Skip deleted entries */
-                if ((uint8_t)entry->name[0] == 0xE5) continue;
-
-                /* Skip volume label and LFN entries */
-                if (entry->attributes & FAT_ATTR_VOLUME_ID) continue;
+                /* Skip deleted, volume label, and LFN entries */
+                if (fat_should_skip_entry(entry)) continue;
 
                 if (fat_name_match(entry, name)) {
                     struct vfs_node *found = fat_create_node(entry);
@@ -395,6 +505,7 @@ static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name) {
         uint16_t cluster = (uint16_t)node->impl;
         uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
         uint32_t entries_per_cluster = cluster_size / sizeof(struct fat16_dir_entry);
+        uint32_t traversed = 0;
 
         uint8_t *cluster_buf = kmalloc(cluster_size);
         if (!cluster_buf) {
@@ -403,6 +514,12 @@ static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name) {
         }
 
         while (!fat_is_end_cluster(cluster)) {
+            if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+                kfree(cluster_buf);
+                kfree(sector_buf);
+                return NULL;
+            }
+
             uint32_t lba = fat_cluster_to_lba(cluster);
             if (fat_read_sectors(lba, g_fat->sectors_per_cluster, cluster_buf) < 0) {
                 kfree(cluster_buf);
@@ -422,11 +539,8 @@ static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name) {
                     return NULL;
                 }
 
-                /* Skip deleted entries */
-                if ((uint8_t)entry->name[0] == 0xE5) continue;
-
-                /* Skip volume label and LFN entries */
-                if (entry->attributes & FAT_ATTR_VOLUME_ID) continue;
+                /* Skip deleted, volume label, and LFN entries */
+                if (fat_should_skip_entry(entry)) continue;
 
                 if (fat_name_match(entry, name)) {
                     struct vfs_node *found = fat_create_node(entry);
@@ -437,6 +551,7 @@ static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name) {
             }
 
             cluster = fat_get_next_cluster(cluster);
+            traversed++;
         }
 
         kfree(cluster_buf);
@@ -460,10 +575,10 @@ bool fat16_detect(int drive, uint32_t partition_lba) {
     /* Check boot signature */
     if (sector[510] != 0x55 || sector[511] != 0xAA) return false;
 
-    /* Check for valid BPB values */
-    if (bpb->bytes_per_sector != 512) return false;
-    if (bpb->num_fats == 0 || bpb->num_fats > 2) return false;
-    if (bpb->root_entries == 0) return false;
+    /* Check for valid BPB geometry before trusting derived values. */
+    struct fat16_fs fs;
+    memset(&fs, 0, sizeof(struct fat16_fs));
+    if (!fat_bpb_validate(bpb, &fs)) return false;
 
     /* Check filesystem type string */
     if (memcmp(bpb->fs_type, "FAT16", 5) != 0 &&
@@ -501,30 +616,11 @@ struct vfs_node *fat16_init(int drive, uint32_t partition_lba) {
 
     struct fat16_bpb *bpb = (struct fat16_bpb *)sector;
 
-    /* Copy BPB info */
-    g_fat->bytes_per_sector = bpb->bytes_per_sector;
-    g_fat->sectors_per_cluster = bpb->sectors_per_cluster;
-    g_fat->reserved_sectors = bpb->reserved_sectors;
-    g_fat->num_fats = bpb->num_fats;
-    g_fat->root_entries = bpb->root_entries;
-    g_fat->sectors_per_fat = bpb->sectors_per_fat;
-
-    if (bpb->total_sectors_16 != 0) {
-        g_fat->total_sectors = bpb->total_sectors_16;
-    } else {
-        g_fat->total_sectors = bpb->total_sectors_32;
+    if (!fat_bpb_validate(bpb, g_fat)) {
+        kfree(g_fat);
+        g_fat = NULL;
+        return NULL;
     }
-
-    /* Calculate derived values */
-    g_fat->fat_start_lba = g_fat->reserved_sectors;
-    g_fat->root_dir_start_lba = g_fat->fat_start_lba +
-                                 (g_fat->num_fats * g_fat->sectors_per_fat);
-    g_fat->root_dir_sectors = (g_fat->root_entries * 32 + g_fat->bytes_per_sector - 1) /
-                               g_fat->bytes_per_sector;
-    g_fat->data_start_lba = g_fat->root_dir_start_lba + g_fat->root_dir_sectors;
-
-    uint32_t data_sectors = g_fat->total_sectors - g_fat->data_start_lba;
-    g_fat->total_clusters = data_sectors / g_fat->sectors_per_cluster;
 
     /* Load FAT table */
     uint32_t fat_bytes = g_fat->sectors_per_fat * g_fat->bytes_per_sector;

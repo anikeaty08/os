@@ -161,20 +161,26 @@ bool vmm_map_page(pagetable_t pml4, uint64_t virt, uint64_t phys, uint64_t flags
     /* Use kernel PML4 if none specified */
     if (!pml4) pml4 = kernel_pml4;
 
+    /*
+     * User accessibility must be propagated through every paging level, but
+     * kernel mappings must keep their parent tables supervisor-only.
+     */
+    uint64_t table_flags = PTE_WRITABLE | (flags & PTE_USER);
+
     /* Walk page tables, creating as needed */
-    uint64_t *pdpt = get_or_create_table(pml4, PML4_INDEX(virt), PTE_WRITABLE | PTE_USER);
+    uint64_t *pdpt = get_or_create_table(pml4, PML4_INDEX(virt), table_flags);
     if (!pdpt) {
         spinlock_release_irqrestore(&vmm_lock, irqflags);
         return false;
     }
 
-    uint64_t *pd = get_or_create_table(pdpt, PDPT_INDEX(virt), PTE_WRITABLE | PTE_USER);
+    uint64_t *pd = get_or_create_table(pdpt, PDPT_INDEX(virt), table_flags);
     if (!pd) {
         spinlock_release_irqrestore(&vmm_lock, irqflags);
         return false;
     }
 
-    uint64_t *pt = get_or_create_table(pd, PD_INDEX(virt), PTE_WRITABLE | PTE_USER);
+    uint64_t *pt = get_or_create_table(pd, PD_INDEX(virt), table_flags);
     if (!pt) {
         spinlock_release_irqrestore(&vmm_lock, irqflags);
         return false;

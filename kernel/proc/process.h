@@ -85,6 +85,9 @@ struct process *process_create(const char *name, void (*entry)(void));
 /* Exit current process */
 void process_exit(int exit_code);
 
+/* Reap zombie processes whose stacks are no longer active */
+void process_reap_zombies(void);
+
 /* Get current running process */
 struct process *process_current(void);
 

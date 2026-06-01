@@ -51,10 +51,19 @@ void scheduler_init(void) {
  * Add process to ready queue
  */
 void scheduler_add(struct process *proc) {
-    if (!proc || proc->state == PROCESS_UNUSED) return;
+    if (!proc || proc->state != PROCESS_READY) return;
 
     uint64_t flags;
     spinlock_acquire_irqsave(&sched_lock, &flags);
+
+    struct process *curr = ready_queue_head;
+    while (curr) {
+        if (curr == proc) {
+            spinlock_release_irqrestore(&sched_lock, flags);
+            return;
+        }
+        curr = curr->next;
+    }
 
     proc->next = NULL;
 
@@ -67,6 +76,31 @@ void scheduler_add(struct process *proc) {
     }
 
     spinlock_release_irqrestore(&sched_lock, flags);
+}
+
+/*
+ * Add process to ready queue while sched_lock is already held
+ */
+static void ready_queue_push_locked(struct process *proc) {
+    if (!proc || proc->state != PROCESS_READY) return;
+
+    struct process *curr = ready_queue_head;
+    while (curr) {
+        if (curr == proc) {
+            return;
+        }
+        curr = curr->next;
+    }
+
+    proc->next = NULL;
+
+    if (ready_queue_tail) {
+        ready_queue_tail->next = proc;
+        ready_queue_tail = proc;
+    } else {
+        ready_queue_head = proc;
+        ready_queue_tail = proc;
+    }
 }
 
 /*
@@ -107,17 +141,22 @@ void scheduler_remove(struct process *proc) {
  * Pop next process from ready queue
  */
 static struct process *ready_queue_pop(void) {
-    if (!ready_queue_head) return NULL;
+    while (ready_queue_head) {
+        struct process *proc = ready_queue_head;
+        ready_queue_head = proc->next;
 
-    struct process *proc = ready_queue_head;
-    ready_queue_head = proc->next;
+        if (!ready_queue_head) {
+            ready_queue_tail = NULL;
+        }
 
-    if (!ready_queue_head) {
-        ready_queue_tail = NULL;
+        proc->next = NULL;
+
+        if (proc->state == PROCESS_READY) {
+            return proc;
+        }
     }
 
-    proc->next = NULL;
-    return proc;
+    return NULL;
 }
 
 /*
@@ -125,6 +164,8 @@ static struct process *ready_queue_pop(void) {
  * Called from non-IRQ context only!
  */
 void schedule(void) {
+    process_reap_zombies();
+
     uint64_t flags;
     spinlock_acquire_irqsave(&sched_lock, &flags);
 
@@ -136,7 +177,7 @@ void schedule(void) {
     /* Get next process from ready queue */
     struct process *next = ready_queue_pop();
 
-    /* If no ready process, keep running current or idle */
+    /* If no ready process, keep running the current context. */
     if (!next) {
         spinlock_release_irqrestore(&sched_lock, flags);
         return;
@@ -145,7 +186,7 @@ void schedule(void) {
     /* If same process, just reset time slice */
     if (next == current) {
         next->time_slice = DEFAULT_TIME_SLICE;
-        scheduler_add(next);
+        next->state = PROCESS_RUNNING;
         spinlock_release_irqrestore(&sched_lock, flags);
         return;
     }
@@ -153,7 +194,7 @@ void schedule(void) {
     /* Put current process back in ready queue if still runnable */
     if (current && current->state == PROCESS_RUNNING) {
         current->state = PROCESS_READY;
-        scheduler_add(current);
+        ready_queue_push_locked(current);
     }
 
     /* Switch to next process */

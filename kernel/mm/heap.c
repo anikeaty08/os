@@ -39,23 +39,66 @@ static uint64_t heap_top = HEAP_START;
 static size_t total_allocated = 0;
 static spinlock_t heap_lock = SPINLOCK_INIT;
 
+static int align_allocation_size(size_t *size) {
+    if (*size > SIZE_MAX - (ALIGNMENT - 1)) {
+        return -1;
+    }
+
+    *size = (*size + ALIGNMENT - 1) & ~(ALIGNMENT - 1);
+    if (*size < MIN_BLOCK_SIZE) *size = MIN_BLOCK_SIZE;
+    if (*size > UINT32_MAX) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static void heap_unmap_pages(uint64_t start, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        uint64_t virt = start + i * PAGE_SIZE;
+        uint64_t phys = vmm_virt_to_phys(NULL, virt);
+
+        if (phys) {
+            vmm_unmap_page(NULL, virt);
+            pmm_free_page((void *)phys);
+        }
+    }
+}
+
 /*
  * Expand heap by mapping more pages
  */
 static int heap_expand(size_t min_size) {
+    if (min_size > SIZE_MAX - (PAGE_SIZE - 1)) {
+        return -1;
+    }
+
     size_t pages_needed = (min_size + PAGE_SIZE - 1) / PAGE_SIZE;
     if (pages_needed < 4) pages_needed = 4;  /* Minimum expansion */
+    if (pages_needed > (UINT64_MAX - heap_top) / PAGE_SIZE) {
+        return -1;
+    }
+
+    uint64_t original_top = heap_top;
+    size_t mapped_pages = 0;
 
     for (size_t i = 0; i < pages_needed; i++) {
         void *page = pmm_alloc_page();
-        if (!page) return -1;
+        if (!page) {
+            heap_unmap_pages(original_top, mapped_pages);
+            heap_top = original_top;
+            return -1;
+        }
 
         if (!vmm_map_page(NULL, heap_top, (uint64_t)page, PTE_WRITABLE)) {
             pmm_free_page(page);
+            heap_unmap_pages(original_top, mapped_pages);
+            heap_top = original_top;
             return -1;
         }
 
         heap_top += PAGE_SIZE;
+        mapped_pages++;
     }
 
     return 0;
@@ -65,12 +108,27 @@ static int heap_expand(size_t min_size) {
  * Initialize heap
  */
 void heap_init(void) {
+    heap_start = NULL;
+    heap_end = NULL;
+    heap_top = HEAP_START;
+    total_allocated = 0;
+    size_t mapped_pages = 0;
+
     /* Map initial heap pages */
     for (size_t i = 0; i < HEAP_INITIAL_SIZE; i += PAGE_SIZE) {
         void *page = pmm_alloc_page();
-        if (!page) return;
+        if (!page) {
+            heap_unmap_pages(HEAP_START, mapped_pages);
+            return;
+        }
 
-        vmm_map_page(NULL, HEAP_START + i, (uint64_t)page, PTE_WRITABLE);
+        if (!vmm_map_page(NULL, HEAP_START + i, (uint64_t)page, PTE_WRITABLE)) {
+            pmm_free_page(page);
+            heap_unmap_pages(HEAP_START, mapped_pages);
+            return;
+        }
+
+        mapped_pages++;
     }
 
     heap_top = HEAP_START + HEAP_INITIAL_SIZE;
@@ -91,10 +149,10 @@ void heap_init(void) {
  */
 void *kmalloc(size_t size) {
     if (size == 0) return NULL;
+    if (!heap_start) return NULL;
 
     /* Align size */
-    size = (size + ALIGNMENT - 1) & ~(ALIGNMENT - 1);
-    if (size < MIN_BLOCK_SIZE) size = MIN_BLOCK_SIZE;
+    if (align_allocation_size(&size) < 0) return NULL;
 
     uint64_t flags;
     spinlock_acquire_irqsave(&heap_lock, &flags);
@@ -104,13 +162,13 @@ void *kmalloc(size_t size) {
     while (block) {
         if (block->free && block->size >= size) {
             /* Check if we can split */
-            if (block->size >= size + sizeof(struct heap_block) + MIN_BLOCK_SIZE) {
+            if (block->size - size >= sizeof(struct heap_block) + MIN_BLOCK_SIZE) {
                 /* Split block */
                 struct heap_block *new_block = (struct heap_block *)
                     ((uint8_t *)block + sizeof(struct heap_block) + size);
 
                 new_block->magic = HEAP_BLOCK_MAGIC;
-                new_block->size = block->size - size - sizeof(struct heap_block);
+                new_block->size = block->size - (uint32_t)size - sizeof(struct heap_block);
                 new_block->next = block->next;
                 new_block->prev = block;
                 new_block->free = 1;
@@ -119,7 +177,7 @@ void *kmalloc(size_t size) {
                     block->next->prev = new_block;
                 }
                 block->next = new_block;
-                block->size = size;
+                block->size = (uint32_t)size;
 
                 if (block == heap_end) {
                     heap_end = new_block;
@@ -136,7 +194,16 @@ void *kmalloc(size_t size) {
     }
 
     /* No suitable block found, expand heap */
+    if (size > SIZE_MAX - sizeof(struct heap_block)) {
+        spinlock_release_irqrestore(&heap_lock, flags);
+        return NULL;
+    }
     size_t expand_size = size + sizeof(struct heap_block);
+    if (expand_size > UINT32_MAX) {
+        spinlock_release_irqrestore(&heap_lock, flags);
+        return NULL;
+    }
+
     if (heap_expand(expand_size) < 0) {
         spinlock_release_irqrestore(&heap_lock, flags);
         return NULL;
@@ -151,9 +218,14 @@ void *kmalloc(size_t size) {
         spinlock_release_irqrestore(&heap_lock, flags);
         return NULL;
     }
+    if (heap_top - (uint64_t)new_block <= sizeof(struct heap_block) ||
+        heap_top - (uint64_t)new_block - sizeof(struct heap_block) > UINT32_MAX) {
+        spinlock_release_irqrestore(&heap_lock, flags);
+        return NULL;
+    }
 
     new_block->magic = HEAP_BLOCK_MAGIC;
-    new_block->size = heap_top - (uint64_t)new_block - sizeof(struct heap_block);
+    new_block->size = (uint32_t)(heap_top - (uint64_t)new_block - sizeof(struct heap_block));
     new_block->next = NULL;
     new_block->prev = heap_end;
     new_block->free = 1;
@@ -170,6 +242,10 @@ void *kmalloc(size_t size) {
  * Allocate zeroed memory
  */
 void *kcalloc(size_t count, size_t size) {
+    if (size != 0 && count > SIZE_MAX / size) {
+        return NULL;
+    }
+
     size_t total = count * size;
     void *ptr = kmalloc(total);
     if (ptr) {
@@ -193,6 +269,10 @@ void *krealloc(void *ptr, size_t new_size) {
 
     if (block->magic != HEAP_BLOCK_MAGIC) {
         return NULL;  /* Invalid pointer */
+    }
+
+    if (align_allocation_size(&new_size) < 0) {
+        return NULL;
     }
 
     if (block->size >= new_size) {
@@ -224,30 +304,43 @@ void kfree(void *ptr) {
     uint64_t flags;
     spinlock_acquire_irqsave(&heap_lock, &flags);
 
+    if (block->free) {
+        spinlock_release_irqrestore(&heap_lock, flags);
+        return;  /* Double free */
+    }
+
     block->free = 1;
     total_allocated -= block->size;
 
     /* Coalesce with next block if free */
     if (block->next && block->next->free) {
-        block->size += sizeof(struct heap_block) + block->next->size;
-        block->next = block->next->next;
-        if (block->next) {
-            block->next->prev = block;
-        }
-        if (heap_end == block->next) {
-            heap_end = block;
+        struct heap_block *next = block->next;
+
+        if (next->size <= UINT32_MAX - sizeof(struct heap_block) &&
+            block->size <= UINT32_MAX - sizeof(struct heap_block) - next->size) {
+            block->size += sizeof(struct heap_block) + next->size;
+            block->next = next->next;
+            if (block->next) {
+                block->next->prev = block;
+            }
+            if (heap_end == next) {
+                heap_end = block;
+            }
         }
     }
 
     /* Coalesce with previous block if free */
     if (block->prev && block->prev->free) {
-        block->prev->size += sizeof(struct heap_block) + block->size;
-        block->prev->next = block->next;
-        if (block->next) {
-            block->next->prev = block->prev;
-        }
-        if (heap_end == block) {
-            heap_end = block->prev;
+        if (block->size <= UINT32_MAX - sizeof(struct heap_block) &&
+            block->prev->size <= UINT32_MAX - sizeof(struct heap_block) - block->size) {
+            block->prev->size += sizeof(struct heap_block) + block->size;
+            block->prev->next = block->next;
+            if (block->next) {
+                block->next->prev = block->prev;
+            }
+            if (heap_end == block) {
+                heap_end = block->prev;
+            }
         }
     }
 
