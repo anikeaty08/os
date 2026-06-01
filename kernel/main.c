@@ -18,6 +18,7 @@
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/idt.h"
 #include "arch/x86_64/irq.h"
+#include "arch/x86_64/syscall.h"
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 #include "mm/heap.h"
@@ -522,6 +523,12 @@ void kmain(void) {
     idt_init();
     serial_puts("OK\n");
     fb_puts("IDT initialized\n");
+
+    /* Initialize system call gate */
+    serial_puts("Initializing syscalls... ");
+    syscall_init();
+    serial_puts("OK\n");
+    fb_puts("System call gate initialized\n");
 
     /* Enable interrupts */
     serial_puts("Enabling interrupts... ");
