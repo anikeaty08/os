@@ -23,6 +23,7 @@
 #define PTE_HUGE        (1ULL << 7)     /* Huge page (2MB/1GB) */
 #define PTE_GLOBAL      (1ULL << 8)     /* Global page */
 #define PTE_NX          (1ULL << 63)    /* No execute */
+#define PTE_ADDR_MASK   0x000FFFFFFFFFF000ULL
 
 /*
  * Page table structure

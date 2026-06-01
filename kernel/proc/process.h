@@ -19,6 +19,7 @@
 #define DEFAULT_TIME_SLICE  10           /* 10 ticks = 10ms at 1000Hz */
 #define USER_ENTRY_VADDR    0x0000000000400000ULL
 #define USER_STACK_TOP      0x0000000080000000ULL
+#define USER_SPACE_TOP      0x0000800000000000ULL
 
 /*
  * Process states
@@ -87,6 +88,9 @@ struct process *process_create(const char *name, void (*entry)(void));
 
 /* Create a new isolated ring-3 process from a flat code image */
 struct process *process_create_user(const char *name, const void *image, size_t size);
+
+/* Create a new isolated ring-3 process from an ELF64 executable image */
+struct process *process_create_elf(const char *name, const void *image, size_t size);
 
 /* Exit current process */
 void process_exit(int exit_code);

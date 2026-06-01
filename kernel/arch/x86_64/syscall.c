@@ -13,8 +13,6 @@
 #include "../../proc/process.h"
 #include "../../mm/vmm.h"
 
-#define USER_SPACE_TOP 0x0000800000000000ULL
-
 extern void syscall_stub(void);
 extern void fb_putchar(char c);
 

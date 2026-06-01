@@ -63,7 +63,7 @@ static uint64_t *get_or_create_table(uint64_t *table, size_t index, uint64_t fla
     }
 
     /* Return virtual address of next table */
-    return phys_to_virt(table[index] & ~0xFFFULL);
+    return phys_to_virt(table[index] & PTE_ADDR_MASK);
 }
 
 /*
@@ -73,7 +73,7 @@ static uint64_t *get_table(uint64_t *table, size_t index) {
     if (!(table[index] & PTE_PRESENT)) {
         return NULL;
     }
-    return phys_to_virt(table[index] & ~0xFFFULL);
+    return phys_to_virt(table[index] & PTE_ADDR_MASK);
 }
 
 /*
@@ -84,7 +84,7 @@ void vmm_init(uint64_t hhdm) {
 
     /* Get current PML4 from CR3 */
     uint64_t cr3 = cpu_read_cr3();
-    kernel_pml4 = phys_to_virt(cr3 & ~0xFFFULL);
+    kernel_pml4 = phys_to_virt(cr3 & PTE_ADDR_MASK);
 }
 
 /*
@@ -136,7 +136,7 @@ void vmm_destroy_address_space(pagetable_t pml4) {
                                     if (pt) {
                                         for (int l = 0; l < 512; l++) {
                                             if (pt[l] & PTE_PRESENT) {
-                                                pmm_free_page((void *)(pt[l] & ~0xFFFULL));
+                                                pmm_free_page((void *)(pt[l] & PTE_ADDR_MASK));
                                             }
                                         }
                                         pmm_free_page((void *)(virt_to_phys(pt)));
@@ -192,7 +192,7 @@ bool vmm_map_page(pagetable_t pml4, uint64_t virt, uint64_t phys, uint64_t flags
     }
 
     /* Set the page table entry */
-    pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | flags | PTE_PRESENT;
+    pt[PT_INDEX(virt)] = (phys & PTE_ADDR_MASK) | flags | PTE_PRESENT;
 
     /* Invalidate TLB */
     cpu_invlpg(virt);
@@ -254,7 +254,7 @@ uint64_t vmm_virt_to_phys(pagetable_t pml4, uint64_t virt) {
 
     if (!(pt[PT_INDEX(virt)] & PTE_PRESENT)) return 0;
 
-    return (pt[PT_INDEX(virt)] & ~0xFFFULL) | (virt & 0xFFF);
+    return (pt[PT_INDEX(virt)] & PTE_ADDR_MASK) | (virt & 0xFFF);
 }
 
 bool vmm_user_range_mapped(pagetable_t pml4, uint64_t virt, size_t size, bool write) {

@@ -45,7 +45,7 @@ void cmd_help(int argc, char **argv) {
     kprintf("  %sview%s      - View file with syntax highlighting\n", theme->accent2, ANSI_RESET);
     kprintf("  %sls%s        - List directory\n", theme->accent2, ANSI_RESET);
     kprintf("  %scat%s       - Display file\n", theme->accent2, ANSI_RESET);
-    kprintf("  %srun%s       - Run flat user binary\n", theme->accent2, ANSI_RESET);
+    kprintf("  %srun%s       - Run ELF64 or flat user binary\n", theme->accent2, ANSI_RESET);
     
     kprintf("\n%sCustomization:%s\n", theme->info, ANSI_RESET);
     kprintf("  %stheme%s     - Change color theme\n", theme->accent2, ANSI_RESET);
@@ -321,11 +321,11 @@ void cmd_cat(int argc, char **argv) {
 }
 
 /*
- * run - Start a flat ring-3 user binary from the filesystem
+ * run - Start a ring-3 user binary from the filesystem
  */
 void cmd_run(int argc, char **argv) {
     if (argc < 2) {
-        kprintf("Usage: run <flat-binary>\n");
+        kprintf("Usage: run <binary>\n");
         return;
     }
 
@@ -373,7 +373,14 @@ void cmd_run(int argc, char **argv) {
         offset += (uint64_t)bytes;
     }
 
-    struct process *proc = process_create_user(argv[1], image, (size_t)size);
+    struct process *proc = NULL;
+    if (size >= 4 && image[0] == 0x7F && image[1] == 'E' &&
+        image[2] == 'L' && image[3] == 'F') {
+        proc = process_create_elf(argv[1], image, (size_t)size);
+    } else {
+        proc = process_create_user(argv[1], image, (size_t)size);
+    }
+
     kfree(image);
     vfs_close(node);
 
