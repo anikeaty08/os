@@ -10,6 +10,7 @@
 #include "process.h"
 #include "../sync/spinlock.h"
 #include "../arch/x86_64/cpu.h"
+#include "../arch/x86_64/gdt.h"
 
 /*
  * Ready queue (circular linked list)
@@ -201,6 +202,7 @@ void schedule(void) {
     next->state = PROCESS_RUNNING;
     next->time_slice = DEFAULT_TIME_SLICE;
     process_set_current(next);
+    tss_set_rsp0(next->kernel_stack);
     context_switches++;
 
     /* Perform context switch */

@@ -42,6 +42,7 @@ struct cpu_context {
     uint64_t rbp;
     uint64_t rbx;
     uint64_t rip;       /* Return address */
+    uint64_t rsp;       /* Stack pointer */
 };
 
 /*

@@ -21,6 +21,7 @@ bits 64
 ;   offset 32: rbp
 ;   offset 40: rbx
 ;   offset 48: rip (return address)
+;   offset 56: rsp
 ;------------------------------------------------------------------------------
 global context_switch
 context_switch:
@@ -44,7 +45,7 @@ context_switch:
     ; We save RSP in a way that when we restore, the ret will work
     ; The return address is already saved, so we adjust
     lea rax, [rsp + 8]      ; Skip return address on stack
-    mov [rdi + 56], rax     ; Save adjusted RSP (optional, not in struct)
+    mov [rdi + 56], rax     ; Save adjusted RSP
 
 .load_new:
     ; Load callee-saved registers from new context
@@ -58,6 +59,7 @@ context_switch:
     ; Jump to new process
     ; Push return address and use ret to transfer control
     mov rax, [rsi + 48]     ; Get new RIP
+    mov rsp, [rsi + 56]     ; Switch to new stack
     push rax
     ret                      ; "Return" to new process
 

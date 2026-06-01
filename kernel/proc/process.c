@@ -130,6 +130,7 @@ struct process *process_create(const char *name, void (*entry)(void)) {
     proc->context.r13 = 0;
     proc->context.r14 = 0;
     proc->context.r15 = 0;
+    proc->context.rsp = stack_top;
 
     /* Mark as ready and add to scheduler */
     proc->state = PROCESS_READY;
