@@ -12,9 +12,11 @@
 #include "../../drivers/serial.h"
 #include "../../proc/process.h"
 #include "../../mm/vmm.h"
+#include "../../mm/heap.h"
 #include "../../fs/vfs.h"
 
 #define USER_PATH_MAX 256
+#define USER_EXEC_MAX (1024 * 1024)
 
 extern void syscall_stub(void);
 extern void fb_putchar(char c);
@@ -139,6 +141,60 @@ static int64_t sys_close(uint64_t fd) {
     return process_fd_close(current, (int)fd);
 }
 
+static int64_t sys_spawn(const char *path) {
+    char kernel_path[USER_PATH_MAX];
+
+    if (copy_user_string((uint64_t)path, kernel_path, sizeof(kernel_path)) < 0) {
+        return -1;
+    }
+
+    struct vfs_node *node = vfs_open(kernel_path);
+    if (!node || vfs_is_directory(node)) {
+        if (node) vfs_close(node);
+        return -1;
+    }
+
+    uint64_t size = vfs_size(node);
+    if (size == 0 || size > USER_EXEC_MAX) {
+        vfs_close(node);
+        return -1;
+    }
+
+    uint8_t *image = kmalloc((size_t)size);
+    if (!image) {
+        vfs_close(node);
+        return -1;
+    }
+
+    uint64_t offset = 0;
+    while (offset < size) {
+        size_t to_read = 4096;
+        if (to_read > size - offset) {
+            to_read = (size_t)(size - offset);
+        }
+
+        int bytes = vfs_read(node, offset, to_read, image + offset);
+        if (bytes <= 0) {
+            kfree(image);
+            vfs_close(node);
+            return -1;
+        }
+
+        offset += (uint64_t)bytes;
+    }
+
+    vfs_close(node);
+
+    struct process *child = process_create_elf(kernel_path, image, (size_t)size);
+    kfree(image);
+
+    if (!child) {
+        return -1;
+    }
+
+    return (int64_t)child->pid;
+}
+
 void syscall_handler(struct interrupt_frame *frame) {
     if (!frame) return;
 
@@ -178,6 +234,10 @@ void syscall_handler(struct interrupt_frame *frame) {
 
         case SYS_CLOSE:
             result = sys_close(frame->rdi);
+            break;
+
+        case SYS_SPAWN:
+            result = sys_spawn((const char *)frame->rdi);
             break;
 
         default:

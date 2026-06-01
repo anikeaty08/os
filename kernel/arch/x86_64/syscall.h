@@ -20,6 +20,7 @@ enum syscall_number {
     SYS_READ = 4,
     SYS_OPEN = 5,
     SYS_CLOSE = 6,
+    SYS_SPAWN = 7,
 };
 
 void syscall_init(void);

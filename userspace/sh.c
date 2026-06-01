@@ -85,6 +85,35 @@ static void cat_file(const char *path) {
     puts("\n");
 }
 
+static void run_program(const char *path) {
+    long pid = sys_spawn(path);
+
+    if (pid < 0) {
+        puts("run: failed to spawn program\n");
+        return;
+    }
+
+    puts("started pid ");
+    char buf[32];
+    int pos = 0;
+    char tmp[24];
+
+    while (pid > 0 && pos < (int)sizeof(tmp)) {
+        tmp[pos++] = (char)('0' + (pid % 10));
+        pid /= 10;
+    }
+
+    int out = 0;
+    if (pos == 0) {
+        buf[out++] = '0';
+    }
+    while (pos > 0) {
+        buf[out++] = tmp[--pos];
+    }
+    buf[out++] = '\n';
+    sys_write(1, buf, (size_t)out);
+}
+
 int main(void) {
     char line[128];
 
@@ -103,7 +132,7 @@ int main(void) {
         trim_newline(line);
 
         if (strcmp(line, "help") == 0) {
-            puts("commands: help pid echo cat exit yield\n");
+            puts("commands: help pid echo cat run exit yield\n");
         } else if (strcmp(line, "pid") == 0) {
             print_pid();
         } else if (strcmp(line, "yield") == 0) {
@@ -112,6 +141,8 @@ int main(void) {
             puts("echo from ring 3\n");
         } else if (starts_with(line, "cat ")) {
             cat_file(line + 4);
+        } else if (starts_with(line, "run ")) {
+            run_program(line + 4);
         } else if (strcmp(line, "exit") == 0) {
             puts("leaving user shell\n");
             return 0;
