@@ -257,6 +257,35 @@ uint64_t vmm_virt_to_phys(pagetable_t pml4, uint64_t virt) {
     return (pt[PT_INDEX(virt)] & ~0xFFFULL) | (virt & 0xFFF);
 }
 
+bool vmm_user_range_mapped(pagetable_t pml4, uint64_t virt, size_t size, bool write) {
+    if (!pml4 || size == 0) return false;
+    if (virt > UINT64_MAX - (size - 1)) return false;
+
+    uint64_t start = virt & ~0xFFFULL;
+    uint64_t end = (virt + size - 1) & ~0xFFFULL;
+    uint64_t max_page = UINT64_MAX & ~0xFFFULL;
+
+    for (uint64_t page = start; page <= end; page += PAGE_SIZE) {
+        uint64_t *pdpt = get_table(pml4, PML4_INDEX(page));
+        if (!pdpt) return false;
+
+        uint64_t *pd = get_table(pdpt, PDPT_INDEX(page));
+        if (!pd) return false;
+
+        uint64_t *pt = get_table(pd, PD_INDEX(page));
+        if (!pt) return false;
+
+        uint64_t entry = pt[PT_INDEX(page)];
+        if (!(entry & PTE_PRESENT)) return false;
+        if (!(entry & PTE_USER)) return false;
+        if (write && !(entry & PTE_WRITABLE)) return false;
+
+        if (page == end || page == max_page) break;
+    }
+
+    return true;
+}
+
 /*
  * Switch address space
  */

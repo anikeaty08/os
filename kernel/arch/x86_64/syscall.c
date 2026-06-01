@@ -11,6 +11,7 @@
 #include "../../lib/stdio.h"
 #include "../../drivers/serial.h"
 #include "../../proc/process.h"
+#include "../../mm/vmm.h"
 
 #define USER_SPACE_TOP 0x0000800000000000ULL
 
@@ -21,7 +22,11 @@ bool user_range_valid(uint64_t ptr, size_t size) {
     if (ptr == 0 || size == 0) return false;
     if (ptr >= USER_SPACE_TOP) return false;
     if (size > USER_SPACE_TOP - ptr) return false;
-    return true;
+
+    struct process *current = process_current();
+    if (!current || !current->page_table) return false;
+
+    return vmm_user_range_mapped(current->page_table, ptr, size, false);
 }
 
 void syscall_init(void) {

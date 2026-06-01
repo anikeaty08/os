@@ -78,6 +78,11 @@ void vmm_unmap_page(pagetable_t pml4, uint64_t virt);
 uint64_t vmm_virt_to_phys(pagetable_t pml4, uint64_t virt);
 
 /*
+ * Validate that a user virtual range is mapped with user permissions.
+ */
+bool vmm_user_range_mapped(pagetable_t pml4, uint64_t virt, size_t size, bool write);
+
+/*
  * Switch to address space
  */
 void vmm_switch_address_space(pagetable_t pml4);
