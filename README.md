@@ -180,6 +180,7 @@ ls /
 run /HELLO
 run /SH
 cat /HELLO
+run /HELLO
 ```
 
 ---
@@ -201,7 +202,7 @@ cat /HELLO
 - [x] ELF program loader
 - [ ] Move primary shell fully to user space
 - [x] Basic file syscalls
-- [ ] Process spawning from user space
+- [x] Process spawning from user space
 - [ ] APIC/IOAPIC support
 - [ ] SMP (multi-core)
 - [ ] Network stack
