@@ -14,6 +14,15 @@ static int strcmp(const char *a, const char *b) {
     return (unsigned char)*a - (unsigned char)*b;
 }
 
+static int starts_with(const char *s, const char *prefix) {
+    while (*prefix) {
+        if (*s++ != *prefix++) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static void puts(const char *s) {
     sys_write(1, s, strlen(s));
 }
@@ -51,6 +60,31 @@ static void print_pid(void) {
     sys_write(1, buf, (size_t)out);
 }
 
+static void cat_file(const char *path) {
+    char buf[128];
+    long fd = sys_open(path);
+
+    if (fd < 0) {
+        puts("cat: cannot open file\n");
+        return;
+    }
+
+    for (;;) {
+        long n = sys_read((int)fd, buf, sizeof(buf));
+        if (n < 0) {
+            puts("cat: read failed\n");
+            break;
+        }
+        if (n == 0) {
+            break;
+        }
+        sys_write(1, buf, (size_t)n);
+    }
+
+    sys_close((int)fd);
+    puts("\n");
+}
+
 int main(void) {
     char line[128];
 
@@ -69,13 +103,15 @@ int main(void) {
         trim_newline(line);
 
         if (strcmp(line, "help") == 0) {
-            puts("commands: help pid echo exit yield\n");
+            puts("commands: help pid echo cat exit yield\n");
         } else if (strcmp(line, "pid") == 0) {
             print_pid();
         } else if (strcmp(line, "yield") == 0) {
             sys_yield();
         } else if (strcmp(line, "echo") == 0) {
             puts("echo from ring 3\n");
+        } else if (starts_with(line, "cat ")) {
+            cat_file(line + 4);
         } else if (strcmp(line, "exit") == 0) {
             puts("leaving user shell\n");
             return 0;

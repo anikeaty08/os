@@ -20,6 +20,15 @@
 #define USER_ENTRY_VADDR    0x0000000000400000ULL
 #define USER_STACK_TOP      0x0000000080000000ULL
 #define USER_SPACE_TOP      0x0000800000000000ULL
+#define PROCESS_MAX_FILES   16
+
+struct vfs_node;
+
+struct process_file {
+    struct vfs_node *node;
+    uint64_t offset;
+    bool used;
+};
 
 /*
  * Process states
@@ -74,6 +83,8 @@ struct process {
 
     struct process *next;           /* Next in ready/wait queue */
     struct process *parent;         /* Parent process */
+
+    struct process_file files[PROCESS_MAX_FILES];
 };
 
 /*
@@ -118,5 +129,10 @@ void process_unblock(struct process *proc);
 
 /* Get process count */
 uint64_t process_count(void);
+
+/* Process file descriptor helpers */
+int process_fd_open(struct process *proc, struct vfs_node *node);
+int process_fd_read(struct process *proc, int fd, uint8_t *buffer, size_t size);
+int process_fd_close(struct process *proc, int fd);
 
 #endif /* _ASTRA_PROC_PROCESS_H */

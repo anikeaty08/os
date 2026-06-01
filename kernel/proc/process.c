@@ -10,6 +10,7 @@
 #include "../mm/heap.h"
 #include "../lib/string.h"
 #include "../sync/spinlock.h"
+#include "../fs/vfs.h"
 
 /*
  * Process table
@@ -120,6 +121,7 @@ static struct process *process_create_user_space(const char *name,
     proc->exit_code = 0;
     proc->next = NULL;
     proc->parent = current_process;
+    memset(proc->files, 0, sizeof(proc->files));
 
     if (name) {
         strncpy(proc->name, name, sizeof(proc->name) - 1);
@@ -183,6 +185,7 @@ struct process *process_create(const char *name, void (*entry)(void)) {
     proc->exit_code = 0;
     proc->next = NULL;
     proc->parent = current_process;
+    memset(proc->files, 0, sizeof(proc->files));
 
     if (name) {
         strncpy(proc->name, name, sizeof(proc->name) - 1);
@@ -505,6 +508,12 @@ void process_reap_zombies(void) {
         }
 
         /* Mark slot as unused */
+        for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
+            if (proc->files[fd].used && proc->files[fd].node) {
+                vfs_close(proc->files[fd].node);
+            }
+        }
+
         if (proc->page_table && proc->page_table != vmm_get_kernel_pml4()) {
             vmm_destroy_address_space(proc->page_table);
         }
@@ -594,4 +603,47 @@ uint64_t process_count(void) {
         }
     }
     return count;
+}
+
+int process_fd_open(struct process *proc, struct vfs_node *node) {
+    if (!proc || !node) return -1;
+
+    for (int fd = 3; fd < PROCESS_MAX_FILES; fd++) {
+        if (!proc->files[fd].used) {
+            proc->files[fd].node = node;
+            proc->files[fd].offset = 0;
+            proc->files[fd].used = true;
+            return fd;
+        }
+    }
+
+    return -1;
+}
+
+int process_fd_read(struct process *proc, int fd, uint8_t *buffer, size_t size) {
+    if (!proc || !buffer || size == 0) return -1;
+    if (fd < 3 || fd >= PROCESS_MAX_FILES) return -1;
+    if (!proc->files[fd].used || !proc->files[fd].node) return -1;
+
+    int bytes = vfs_read(proc->files[fd].node, proc->files[fd].offset, size, buffer);
+    if (bytes > 0) {
+        proc->files[fd].offset += (uint64_t)bytes;
+    }
+
+    return bytes;
+}
+
+int process_fd_close(struct process *proc, int fd) {
+    if (!proc) return -1;
+    if (fd < 3 || fd >= PROCESS_MAX_FILES) return -1;
+    if (!proc->files[fd].used) return -1;
+
+    if (proc->files[fd].node) {
+        vfs_close(proc->files[fd].node);
+    }
+
+    proc->files[fd].node = NULL;
+    proc->files[fd].offset = 0;
+    proc->files[fd].used = false;
+    return 0;
 }

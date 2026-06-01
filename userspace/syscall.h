@@ -9,6 +9,8 @@
 #define SYS_GETPID 2
 #define SYS_YIELD  3
 #define SYS_READ   4
+#define SYS_OPEN   5
+#define SYS_CLOSE  6
 
 static inline long syscall3(long number, long a0, long a1, long a2) {
     long ret;
@@ -23,6 +25,14 @@ static inline long syscall3(long number, long a0, long a1, long a2) {
 
 static inline long sys_read(int fd, void *buf, size_t len) {
     return syscall3(SYS_READ, fd, (long)buf, len);
+}
+
+static inline long sys_open(const char *path) {
+    return syscall3(SYS_OPEN, (long)path, 0, 0);
+}
+
+static inline long sys_close(int fd) {
+    return syscall3(SYS_CLOSE, fd, 0, 0);
 }
 
 static inline long sys_write(int fd, const void *buf, size_t len) {

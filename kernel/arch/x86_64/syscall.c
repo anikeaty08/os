@@ -12,6 +12,9 @@
 #include "../../drivers/serial.h"
 #include "../../proc/process.h"
 #include "../../mm/vmm.h"
+#include "../../fs/vfs.h"
+
+#define USER_PATH_MAX 256
 
 extern void syscall_stub(void);
 extern void fb_putchar(char c);
@@ -67,12 +70,13 @@ static int64_t sys_write(uint64_t fd, const char *buf, size_t len) {
 }
 
 static int64_t sys_read(uint64_t fd, char *buf, size_t len) {
-    if (fd != 0) {
+    if (!user_range_writable((uint64_t)buf, len)) {
         return -1;
     }
 
-    if (!user_range_writable((uint64_t)buf, len)) {
-        return -1;
+    if (fd != 0) {
+        struct process *current = process_current();
+        return process_fd_read(current, (int)fd, (uint8_t *)buf, len);
     }
 
     size_t read = 0;
@@ -85,6 +89,54 @@ static int64_t sys_read(uint64_t fd, char *buf, size_t len) {
     }
 
     return (int64_t)read;
+}
+
+static int copy_user_string(uint64_t user_ptr, char *out, size_t out_size) {
+    if (!out || out_size == 0) return -1;
+
+    for (size_t i = 0; i < out_size; i++) {
+        if (!user_range_valid(user_ptr + i, 1)) {
+            return -1;
+        }
+
+        char c = ((const char *)user_ptr)[i];
+        out[i] = c;
+
+        if (c == '\0') {
+            return 0;
+        }
+    }
+
+    out[out_size - 1] = '\0';
+    return -1;
+}
+
+static int64_t sys_open(const char *path) {
+    char kernel_path[USER_PATH_MAX];
+
+    if (copy_user_string((uint64_t)path, kernel_path, sizeof(kernel_path)) < 0) {
+        return -1;
+    }
+
+    struct vfs_node *node = vfs_open(kernel_path);
+    if (!node || vfs_is_directory(node)) {
+        if (node) vfs_close(node);
+        return -1;
+    }
+
+    struct process *current = process_current();
+    int fd = process_fd_open(current, node);
+    if (fd < 0) {
+        vfs_close(node);
+        return -1;
+    }
+
+    return fd;
+}
+
+static int64_t sys_close(uint64_t fd) {
+    struct process *current = process_current();
+    return process_fd_close(current, (int)fd);
 }
 
 void syscall_handler(struct interrupt_frame *frame) {
@@ -118,6 +170,14 @@ void syscall_handler(struct interrupt_frame *frame) {
         case SYS_READ:
             result = sys_read(frame->rdi, (char *)frame->rsi,
                               (size_t)frame->rdx);
+            break;
+
+        case SYS_OPEN:
+            result = sys_open((const char *)frame->rdi);
+            break;
+
+        case SYS_CLOSE:
+            result = sys_close(frame->rdi);
             break;
 
         default:

@@ -18,6 +18,8 @@ enum syscall_number {
     SYS_GETPID = 2,
     SYS_YIELD = 3,
     SYS_READ = 4,
+    SYS_OPEN = 5,
+    SYS_CLOSE = 6,
 };
 
 void syscall_init(void);
