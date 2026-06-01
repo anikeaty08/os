@@ -11,6 +11,7 @@
 #include "../sync/spinlock.h"
 #include "../arch/x86_64/cpu.h"
 #include "../arch/x86_64/gdt.h"
+#include "../mm/vmm.h"
 
 /*
  * Ready queue (circular linked list)
@@ -203,6 +204,7 @@ void schedule(void) {
     next->time_slice = DEFAULT_TIME_SLICE;
     process_set_current(next);
     tss_set_rsp0(next->kernel_stack);
+    vmm_switch_address_space(next->page_table);
     context_switches++;
 
     /* Perform context switch */
