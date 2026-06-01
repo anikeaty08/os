@@ -134,6 +134,11 @@ void vmm_destroy_address_space(pagetable_t pml4) {
                                 if (pd[k] & PTE_PRESENT && !(pd[k] & PTE_HUGE)) {
                                     uint64_t *pt = get_table(pd, k);
                                     if (pt) {
+                                        for (int l = 0; l < 512; l++) {
+                                            if (pt[l] & PTE_PRESENT) {
+                                                pmm_free_page((void *)(pt[l] & ~0xFFFULL));
+                                            }
+                                        }
                                         pmm_free_page((void *)(virt_to_phys(pt)));
                                     }
                                 }

@@ -23,6 +23,7 @@ static spinlock_t process_lock = SPINLOCK_INIT;
  * External context switch function (in context.asm)
  */
 extern void context_switch(struct cpu_context *old, struct cpu_context *new);
+extern void user_enter(uint64_t entry, uint64_t user_stack);
 
 /*
  * Initialize process subsystem
@@ -71,6 +72,17 @@ static void process_entry_wrapper(void) {
 
     /* Process returned, exit */
     process_exit(0);
+}
+
+static void user_process_entry_wrapper(void) {
+    uint64_t entry;
+    uint64_t user_stack;
+
+    __asm__ volatile ("mov %%r12, %0" : "=r"(entry));
+    __asm__ volatile ("mov %%r13, %0" : "=r"(user_stack));
+
+    user_enter(entry, user_stack);
+    process_exit(-1);
 }
 
 /*
@@ -141,6 +153,124 @@ struct process *process_create(const char *name, void (*entry)(void)) {
 }
 
 /*
+ * Create a new isolated ring-3 process from a flat code image
+ */
+struct process *process_create_user(const char *name, const void *image, size_t size) {
+    if (!image || size == 0) return NULL;
+    if (size > 1024 * 1024) return NULL;
+
+    pagetable_t address_space = vmm_create_address_space();
+    if (!address_space) return NULL;
+
+    uint64_t flags;
+    spinlock_acquire_irqsave(&process_lock, &flags);
+
+    struct process *proc = find_free_slot();
+    if (!proc) {
+        spinlock_release_irqrestore(&process_lock, flags);
+        vmm_destroy_address_space(address_space);
+        return NULL;
+    }
+
+    size_t stack_pages = (KERNEL_STACK_SIZE + PAGE_SIZE - 1) / PAGE_SIZE;
+    void *stack_phys = pmm_alloc_pages(stack_pages);
+    if (!stack_phys) {
+        spinlock_release_irqrestore(&process_lock, flags);
+        vmm_destroy_address_space(address_space);
+        return NULL;
+    }
+
+    extern uint64_t hhdm_offset;
+    uint64_t stack_base = (uint64_t)stack_phys + hhdm_offset;
+    uint64_t stack_top = stack_base + KERNEL_STACK_SIZE;
+
+    size_t image_pages = PAGE_ALIGN_UP(size) / PAGE_SIZE;
+    const uint8_t *src = (const uint8_t *)image;
+
+    for (size_t i = 0; i < image_pages; i++) {
+        void *page = pmm_alloc_page();
+        if (!page) {
+            pmm_free_pages(stack_phys, stack_pages);
+            spinlock_release_irqrestore(&process_lock, flags);
+            vmm_destroy_address_space(address_space);
+            return NULL;
+        }
+
+        uint8_t *dst = (uint8_t *)((uint64_t)page + hhdm_offset);
+        memset(dst, 0, PAGE_SIZE);
+
+        size_t to_copy = PAGE_SIZE;
+        if (i * PAGE_SIZE + to_copy > size) {
+            to_copy = size - i * PAGE_SIZE;
+        }
+        memcpy(dst, src + i * PAGE_SIZE, to_copy);
+
+        if (!vmm_map_page(address_space, USER_ENTRY_VADDR + i * PAGE_SIZE,
+                          (uint64_t)page, PTE_USER)) {
+            pmm_free_page(page);
+            pmm_free_pages(stack_phys, stack_pages);
+            spinlock_release_irqrestore(&process_lock, flags);
+            vmm_destroy_address_space(address_space);
+            return NULL;
+        }
+    }
+
+    for (size_t i = 0; i < USER_STACK_SIZE / PAGE_SIZE; i++) {
+        void *page = pmm_alloc_page();
+        if (!page) {
+            pmm_free_pages(stack_phys, stack_pages);
+            spinlock_release_irqrestore(&process_lock, flags);
+            vmm_destroy_address_space(address_space);
+            return NULL;
+        }
+
+        uint64_t virt = USER_STACK_TOP - USER_STACK_SIZE + i * PAGE_SIZE;
+        if (!vmm_map_page(address_space, virt, (uint64_t)page,
+                          PTE_USER | PTE_WRITABLE)) {
+            pmm_free_page(page);
+            pmm_free_pages(stack_phys, stack_pages);
+            spinlock_release_irqrestore(&process_lock, flags);
+            vmm_destroy_address_space(address_space);
+            return NULL;
+        }
+    }
+
+    proc->pid = next_pid++;
+    proc->state = PROCESS_CREATED;
+    proc->cpu_id = 0;
+    proc->page_table = address_space;
+    proc->kernel_stack = stack_top;
+    proc->kernel_stack_base = stack_base;
+    proc->user_stack = USER_STACK_TOP;
+    proc->time_slice = DEFAULT_TIME_SLICE;
+    proc->exit_code = 0;
+    proc->next = NULL;
+    proc->parent = current_process;
+
+    if (name) {
+        strncpy(proc->name, name, sizeof(proc->name) - 1);
+        proc->name[sizeof(proc->name) - 1] = '\0';
+    } else {
+        strcpy(proc->name, "user");
+    }
+
+    proc->context.rip = (uint64_t)user_process_entry_wrapper;
+    proc->context.rbx = 0;
+    proc->context.rbp = 0;
+    proc->context.r12 = USER_ENTRY_VADDR;
+    proc->context.r13 = USER_STACK_TOP;
+    proc->context.r14 = 0;
+    proc->context.r15 = 0;
+    proc->context.rsp = stack_top;
+
+    proc->state = PROCESS_READY;
+    scheduler_add(proc);
+
+    spinlock_release_irqrestore(&process_lock, flags);
+    return proc;
+}
+
+/*
  * Exit current process
  */
 void process_exit(int exit_code) {
@@ -188,6 +318,10 @@ void process_reap_zombies(void) {
         }
 
         /* Mark slot as unused */
+        if (proc->page_table && proc->page_table != vmm_get_kernel_pml4()) {
+            vmm_destroy_address_space(proc->page_table);
+        }
+
         memset(proc, 0, sizeof(*proc));
         proc->state = PROCESS_UNUSED;
     }
