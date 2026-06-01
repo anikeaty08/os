@@ -27,6 +27,8 @@ A hobby x86_64 operating system written in C from scratch.
 - **Process Control Blocks** - PID, state, kernel stack
 - **Round-Robin Scheduler** - Preemptive multitasking
 - **Context Switching** - Full register save/restore
+- **Ring 3 User Mode** - Isolated user address spaces and syscall entry
+- **ELF64 Loader** - Loads user-space ELF executables from VFS
 
 ### Drivers
 - **Framebuffer Console** - Text output with 8x8 font
@@ -52,6 +54,7 @@ Built-in commands:
 | `cpuinfo` | Show CPU information |
 | `ls` | List directory contents |
 | `cat` | Display file contents |
+| `run` | Run ELF64 or flat user binary |
 | `ps` | List processes |
 | `version` | Show OS version |
 | `test` | Run system tests |
@@ -114,6 +117,8 @@ os/
 - GCC (or x86_64-elf-gcc cross compiler)
 - NASM
 - xorriso
+- dosfstools
+- mtools
 - QEMU
 - Git
 
@@ -121,15 +126,16 @@ os/
 
 ```bash
 # Install dependencies (Ubuntu/Debian)
-sudo apt install build-essential nasm xorriso qemu-system-x86 git
+sudo apt install build-essential nasm xorriso qemu-system-x86 git dosfstools mtools
 
 # Clone Limine bootloader
 git clone https://github.com/limine-bootloader/limine.git --branch=v8.x-binary --depth=1
 
-# Build
+# Build boot ISO and user programs
 make iso
+make disk
 
-# Run
+# Run with the FAT16 user-program disk attached
 make run
 ```
 
@@ -137,7 +143,9 @@ make run
 | Target | Description |
 |--------|-------------|
 | `make` | Build kernel |
+| `make userspace` | Build user-space ELF binaries |
 | `make iso` | Create bootable ISO |
+| `make disk` | Create FAT16 disk image containing user programs |
 | `make run` | Run in QEMU |
 | `make run-debug` | Run with interrupt debugging |
 | `make clean` | Remove build artifacts |
@@ -147,10 +155,7 @@ make run
 ## Running in QEMU
 
 ```bash
-# Basic run
-qemu-system-x86_64 -cdrom astraos.iso -m 256M -serial stdio
-
-# With FAT16 disk image
+# Run with FAT16 disk image containing /SH and /HELLO
 qemu-system-x86_64 -cdrom astraos.iso -m 256M -serial stdio \
     -drive file=disk.img,format=raw,if=ide
 
@@ -164,16 +169,16 @@ qemu-system-x86_64 -cdrom astraos.iso -m 256M -serial stdio \
 ## Creating a Test Disk
 
 ```bash
-# Create 32MB FAT16 disk image
-dd if=/dev/zero of=disk.img bs=1M count=32
-mkfs.fat -F 16 disk.img
+make disk
+make run
+```
 
-# Add files
-echo "Hello from AstraOS!" > hello.txt
-mcopy -i disk.img hello.txt ::
+Inside AstraOS:
 
-# Run with disk
-make run DISK=disk.img
+```text
+ls /
+run /HELLO
+run /SH
 ```
 
 ---
@@ -190,9 +195,11 @@ make run DISK=disk.img
 
 ## Future Plans
 
-- [ ] User mode (Ring 3)
-- [ ] System calls
-- [ ] ELF program loader
+- [x] User mode (Ring 3)
+- [x] System calls
+- [x] ELF program loader
+- [ ] Move primary shell fully to user space
+- [ ] File syscalls and process spawning from user space
 - [ ] APIC/IOAPIC support
 - [ ] SMP (multi-core)
 - [ ] Network stack

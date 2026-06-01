@@ -47,13 +47,17 @@ OBJECTS := $(C_OBJECTS) $(ASM_OBJECTS)
 # Output files
 KERNEL := iso/kernel.elf
 ISO := astraos.iso
+DISK := disk.img
+USER_BUILD := build/user
+USER_PROGRAMS := sh hello
+USER_BINS := $(addprefix $(USER_BUILD)/,$(USER_PROGRAMS))
 
 # Limine bootloader path (adjust after cloning)
 LIMINE_DIR := limine
 
-.PHONY: all clean run run-debug iso limine
+.PHONY: all clean run run-debug iso limine disk userspace
 
-all: $(KERNEL)
+all: $(KERNEL) userspace
 
 $(KERNEL): $(OBJECTS)
 	@mkdir -p iso
@@ -65,6 +69,20 @@ $(KERNEL): $(OBJECTS)
 
 %.o: %.asm
 	$(AS) $(ASFLAGS) $< -o $@
+
+$(USER_BUILD):
+	@mkdir -p $(USER_BUILD)
+
+$(USER_BUILD)/crt0.o: userspace/crt0.asm | $(USER_BUILD)
+	$(AS) $(ASFLAGS) $< -o $@
+
+$(USER_BUILD)/%: userspace/%.c $(USER_BUILD)/crt0.o userspace/linker.ld userspace/syscall.h | $(USER_BUILD)
+	$(CC) -ffreestanding -fno-stack-protector -fno-pie -fno-pic \
+		-mno-red-zone -nostdlib -static -O2 -Wall -Wextra -Werror \
+		-std=gnu11 -Iuserspace -T userspace/linker.ld \
+		$(USER_BUILD)/crt0.o $< -o $@
+
+userspace: $(USER_BINS)
 
 # Clone Limine if not present
 limine:
@@ -91,19 +109,28 @@ iso: $(KERNEL) limine
 	$(LIMINE_DIR)/limine bios-install $(ISO)
 	@echo "ISO built: $(ISO)"
 
+disk: userspace
+	rm -f $(DISK)
+	dd if=/dev/zero of=$(DISK) bs=1M count=32
+	mkfs.fat -F 16 $(DISK)
+	mcopy -i $(DISK) $(USER_BUILD)/sh ::/SH
+	mcopy -i $(DISK) $(USER_BUILD)/hello ::/HELLO
+
 # Run in QEMU
-run: iso
+run: iso disk
 	qemu-system-x86_64 \
 		-cdrom $(ISO) \
+		-drive file=$(DISK),format=raw,if=ide \
 		-m 256M \
 		-serial stdio \
 		-no-reboot \
 		-no-shutdown
 
 # Run with interrupt debugging
-run-debug: iso
+run-debug: iso disk
 	qemu-system-x86_64 \
 		-cdrom $(ISO) \
+		-drive file=$(DISK),format=raw,if=ide \
 		-m 256M \
 		-serial stdio \
 		-d int,cpu_reset \
@@ -111,9 +138,10 @@ run-debug: iso
 		-no-shutdown
 
 # Run with GDB support
-run-gdb: iso
+run-gdb: iso disk
 	qemu-system-x86_64 \
 		-cdrom $(ISO) \
+		-drive file=$(DISK),format=raw,if=ide \
 		-m 256M \
 		-serial stdio \
 		-s -S \
@@ -123,8 +151,9 @@ run-gdb: iso
 
 # Clean build artifacts
 clean:
-	rm -f $(OBJECTS) $(KERNEL) $(ISO)
+	rm -f $(OBJECTS) $(KERNEL) $(ISO) $(DISK)
 	rm -rf iso/*.sys iso/*.bin iso/*.conf iso/*.elf iso/EFI
+	rm -rf build
 
 # Deep clean (including Limine)
 distclean: clean
@@ -137,6 +166,8 @@ help:
 	@echo "Targets:"
 	@echo "  all        - Build kernel"
 	@echo "  iso        - Build bootable ISO"
+	@echo "  userspace  - Build user-space ELF binaries"
+	@echo "  disk       - Build FAT16 user program disk image"
 	@echo "  run        - Run in QEMU"
 	@echo "  run-debug  - Run with interrupt debugging"
 	@echo "  run-gdb    - Run with GDB support"
