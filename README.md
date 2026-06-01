@@ -179,6 +179,7 @@ Inside AstraOS:
 ls /
 run /HELLO
 run /SH
+cat /HELLO
 ```
 
 ---
@@ -199,7 +200,8 @@ run /SH
 - [x] System calls
 - [x] ELF program loader
 - [ ] Move primary shell fully to user space
-- [ ] File syscalls and process spawning from user space
+- [x] Basic file syscalls
+- [ ] Process spawning from user space
 - [ ] APIC/IOAPIC support
 - [ ] SMP (multi-core)
 - [ ] Network stack
