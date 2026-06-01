@@ -17,11 +17,13 @@ enum syscall_number {
     SYS_WRITE = 1,
     SYS_GETPID = 2,
     SYS_YIELD = 3,
+    SYS_READ = 4,
 };
 
 void syscall_init(void);
 void syscall_handler(struct interrupt_frame *frame);
 
 bool user_range_valid(uint64_t ptr, size_t size);
+bool user_range_writable(uint64_t ptr, size_t size);
 
 #endif /* _ASTRA_ARCH_SYSCALL_H */
