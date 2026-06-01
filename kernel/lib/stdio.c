@@ -281,25 +281,10 @@ int kprintf(const char *format, ...) {
 }
 
 /*
- * ksprintf - format to buffer
+ * Core vsnprintf implementation
  */
-int ksprintf(char *buf, const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    /* Simple implementation - just use ksnprintf with large size */
-    int count = ksnprintf(buf, 4096, format, args);
-    va_end(args);
-    return count;
-}
-
-/*
- * ksnprintf - format to buffer with size limit
- */
-int ksnprintf(char *buf, size_t size, const char *format, ...) {
+static int kvsnprintf(char *buf, size_t size, const char *format, va_list args) {
     if (size == 0) return 0;
-
-    va_list args;
-    va_start(args, format);
 
     size_t pos = 0;
     char temp[65];
@@ -382,8 +367,30 @@ int ksnprintf(char *buf, size_t size, const char *format, ...) {
     }
 
     buf[pos] = '\0';
-    va_end(args);
     return pos;
+}
+
+/*
+ * ksprintf - format to buffer
+ */
+int ksprintf(char *buf, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    /* Simple implementation - just use ksnprintf with large size */
+    int count = kvsnprintf(buf, 4096, format, args);
+    va_end(args);
+    return count;
+}
+
+/*
+ * ksnprintf - format to buffer with size limit
+ */
+int ksnprintf(char *buf, size_t size, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    int count = kvsnprintf(buf, size, format, args);
+    va_end(args);
+    return count;
 }
 
 /*

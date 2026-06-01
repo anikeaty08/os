@@ -284,16 +284,16 @@ int ata_read(int drive_num, uint64_t lba, uint32_t count, void *buffer) {
         return -1;
     }
 
-    if (lba + count > drive->sectors) {
-        return -1;
-    }
-
     if (!buffer || count == 0) {
         return 0;
     }
 
+    if (lba > drive->sectors || count > drive->sectors - lba) {
+        return -1;
+    }
+
     /* Use LBA28 for now (supports up to 128GB) */
-    if (lba + count < 0x10000000) {
+    if (lba < 0x10000000 && count <= 0x10000000 - lba) {
         return ata_read_lba28(drive, (uint32_t)lba, count, buffer);
     }
 
