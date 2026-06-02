@@ -1,9 +1,9 @@
 /*
  * AstraOS - Virtual File System Implementation
- * Abstract filesystem interface (READ-ONLY)
+ * Abstract filesystem interface
  *
- * This VFS supports read and bounded write operations when the mounted
- * filesystem exposes them.
+ * This VFS supports read, write, create, delete, rename, truncate, and fsck
+ * operations when the mounted filesystem exposes them.
  */
 
 #include "vfs.h"
@@ -14,6 +14,45 @@
  * Root filesystem node
  */
 static struct vfs_node *vfs_root = NULL;
+
+static bool vfs_split_path(const char *path,
+                           char parent_path[VFS_MAX_PATH],
+                           char name[VFS_MAX_NAME]) {
+    if (!path || !parent_path || !name || path[0] == '\0') return false;
+
+    char path_copy[VFS_MAX_PATH];
+    strncpy(path_copy, path, VFS_MAX_PATH - 1);
+    path_copy[VFS_MAX_PATH - 1] = '\0';
+
+    size_t len = strlen(path_copy);
+    while (len > 1 && path_copy[len - 1] == '/') {
+        path_copy[--len] = '\0';
+    }
+
+    if (strcmp(path_copy, "/") == 0) return false;
+
+    char *last_slash = strrchr(path_copy, '/');
+    char *base = path_copy;
+
+    if (last_slash) {
+        base = last_slash + 1;
+        if (last_slash == path_copy) {
+            strcpy(parent_path, "/");
+        } else {
+            *last_slash = '\0';
+            strncpy(parent_path, path_copy, VFS_MAX_PATH - 1);
+            parent_path[VFS_MAX_PATH - 1] = '\0';
+        }
+    } else {
+        strcpy(parent_path, "/");
+    }
+
+    if (base[0] == '\0') return false;
+
+    strncpy(name, base, VFS_MAX_NAME - 1);
+    name[VFS_MAX_NAME - 1] = '\0';
+    return true;
+}
 
 /*
  * Initialize VFS
@@ -129,30 +168,79 @@ struct vfs_node *vfs_open(const char *path) {
 struct vfs_node *vfs_create(const char *path, uint32_t uid) {
     if (!path || !vfs_root) return NULL;
 
-    char path_copy[VFS_MAX_PATH];
-    strncpy(path_copy, path, VFS_MAX_PATH - 1);
-    path_copy[VFS_MAX_PATH - 1] = '\0';
+    char parent_path[VFS_MAX_PATH];
+    char name[VFS_MAX_NAME];
+    if (!vfs_split_path(path, parent_path, name)) return NULL;
 
-    char *last_slash = strrchr(path_copy, '/');
-    char *name = path_copy;
-    struct vfs_node *parent = vfs_root;
-
-    if (last_slash) {
-        name = last_slash + 1;
-        if (last_slash == path_copy) {
-            parent = vfs_root;
-        } else {
-            *last_slash = '\0';
-            parent = vfs_resolve_path(path_copy);
-        }
-    }
-
-    if (!parent || !name || name[0] == '\0') return NULL;
+    struct vfs_node *parent = vfs_resolve_path(parent_path);
+    if (!parent || name[0] == '\0') return NULL;
     if (!vfs_is_directory(parent) || !vfs_can_write(parent)) return NULL;
     if (vfs_finddir(parent, name)) return NULL;
     if (!parent->create) return NULL;
 
     return parent->create(parent, name, uid);
+}
+
+int vfs_unlink(const char *path) {
+    if (!path || !vfs_root) return -1;
+
+    char parent_path[VFS_MAX_PATH];
+    char name[VFS_MAX_NAME];
+    if (!vfs_split_path(path, parent_path, name)) return -1;
+
+    struct vfs_node *parent = vfs_resolve_path(parent_path);
+    if (!parent || !vfs_is_directory(parent) || !vfs_can_write(parent)) return -1;
+    if (!parent->unlink) return -1;
+
+    return parent->unlink(parent, name);
+}
+
+int vfs_rename(const char *old_path, const char *new_path) {
+    if (!old_path || !new_path || !vfs_root) return -1;
+
+    char old_parent_path[VFS_MAX_PATH];
+    char old_name[VFS_MAX_NAME];
+    if (!vfs_split_path(old_path, old_parent_path, old_name)) return -1;
+
+    struct vfs_node *old_parent = vfs_resolve_path(old_parent_path);
+    if (!old_parent || !vfs_is_directory(old_parent) ||
+        !vfs_can_write(old_parent) || !old_parent->rename) {
+        return -1;
+    }
+
+    char new_parent_path[VFS_MAX_PATH];
+    char new_name[VFS_MAX_NAME];
+    struct vfs_node *existing = vfs_resolve_path(new_path);
+    if (existing && vfs_is_directory(existing)) {
+        strncpy(new_parent_path, new_path, VFS_MAX_PATH - 1);
+        new_parent_path[VFS_MAX_PATH - 1] = '\0';
+        strncpy(new_name, old_name, VFS_MAX_NAME - 1);
+        new_name[VFS_MAX_NAME - 1] = '\0';
+    } else {
+        if (existing) return -1;
+        if (!vfs_split_path(new_path, new_parent_path, new_name)) return -1;
+    }
+
+    struct vfs_node *new_parent = vfs_resolve_path(new_parent_path);
+    if (!new_parent || !vfs_is_directory(new_parent) ||
+        !vfs_can_write(new_parent)) {
+        return -1;
+    }
+
+    if (vfs_finddir(new_parent, new_name)) return -1;
+
+    return old_parent->rename(old_parent, old_name, new_parent, new_name);
+}
+
+int vfs_truncate(struct vfs_node *node, uint64_t size) {
+    if (!node || !vfs_is_file(node) || !vfs_can_write(node)) return -1;
+    if (!node->truncate) return -1;
+    return node->truncate(node, size);
+}
+
+int vfs_fsck(uint32_t flags) {
+    if (!vfs_root || !vfs_root->fsck) return -1;
+    return vfs_root->fsck(vfs_root, flags);
 }
 
 /*

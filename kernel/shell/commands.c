@@ -78,6 +78,10 @@ void cmd_help(int argc, char **argv) {
     kprintf("  %scat%s       - Display file\n", theme->accent2, ANSI_RESET);
     kprintf("  %stouch%s     - Create an empty file\n", theme->accent2, ANSI_RESET);
     kprintf("  %swrite%s     - Create/grow and write file bytes\n", theme->accent2, ANSI_RESET);
+    kprintf("  %srm%s        - Delete a file or empty directory\n", theme->accent2, ANSI_RESET);
+    kprintf("  %smv%s        - Rename or move a file\n", theme->accent2, ANSI_RESET);
+    kprintf("  %struncate%s  - Resize a file\n", theme->accent2, ANSI_RESET);
+    kprintf("  %sfsck%s      - Check or repair FAT metadata\n", theme->accent2, ANSI_RESET);
     kprintf("  %srun%s       - Run ELF64 or flat user binary\n", theme->accent2, ANSI_RESET);
     
     kprintf("\n%sCustomization:%s\n", theme->info, ANSI_RESET);
@@ -432,6 +436,12 @@ void cmd_write(int argc, char **argv) {
         }
     }
 
+    if (out == 0) {
+        kprintf("write: no text supplied\n");
+        vfs_close(node);
+        return;
+    }
+
     int bytes = vfs_write(node, offset, out, (const uint8_t *)buffer);
     vfs_close(node);
 
@@ -441,6 +451,116 @@ void cmd_write(int argc, char **argv) {
     }
 
     kprintf("write: wrote %d byte(s)\n", bytes);
+}
+
+void cmd_rm(int argc, char **argv) {
+    if (argc < 2) {
+        kprintf("Usage: rm <path>\n");
+        return;
+    }
+
+    struct vfs_node *node = vfs_resolve_path(argv[1]);
+    if (!node) {
+        kprintf("rm: %s: No such file or directory\n", argv[1]);
+        return;
+    }
+
+    if (!vfs_can_write_as(node, user_get_current_uid(), user_is_admin())) {
+        kprintf("rm: %s: Permission denied\n", argv[1]);
+        return;
+    }
+
+    if (vfs_unlink(argv[1]) < 0) {
+        kprintf("rm: %s: delete failed (directories must be empty)\n", argv[1]);
+        return;
+    }
+
+    kprintf("rm: deleted %s\n", argv[1]);
+}
+
+void cmd_mv(int argc, char **argv) {
+    if (argc < 3) {
+        kprintf("Usage: mv <old> <new>\n");
+        return;
+    }
+
+    struct vfs_node *node = vfs_resolve_path(argv[1]);
+    if (!node) {
+        kprintf("mv: %s: No such file or directory\n", argv[1]);
+        return;
+    }
+
+    if (!vfs_can_write_as(node, user_get_current_uid(), user_is_admin())) {
+        kprintf("mv: %s: Permission denied\n", argv[1]);
+        return;
+    }
+
+    if (vfs_rename(argv[1], argv[2]) < 0) {
+        kprintf("mv: failed (8.3 name required; existing targets are not replaced)\n");
+        kprintf("mv: directory moves across parents are not supported\n");
+        return;
+    }
+
+    kprintf("mv: %s -> %s\n", argv[1], argv[2]);
+}
+
+void cmd_truncate(int argc, char **argv) {
+    uint64_t size;
+
+    if (argc < 3 || !parse_u64_arg(argv[2], &size)) {
+        kprintf("Usage: truncate <file> <size>\n");
+        return;
+    }
+
+    struct vfs_node *node = vfs_resolve_path(argv[1]);
+    if (!node) {
+        kprintf("truncate: %s: No such file or directory\n", argv[1]);
+        return;
+    }
+
+    if (vfs_is_directory(node)) {
+        kprintf("truncate: %s: Is a directory\n", argv[1]);
+        return;
+    }
+
+    if (!vfs_can_write_as(node, user_get_current_uid(), user_is_admin())) {
+        kprintf("truncate: %s: Permission denied\n", argv[1]);
+        return;
+    }
+
+    if (vfs_truncate(node, size) < 0) {
+        kprintf("truncate: %s: resize failed\n", argv[1]);
+        return;
+    }
+
+    kprintf("truncate: %s is now %llu byte(s)\n", argv[1], size);
+}
+
+void cmd_fsck(int argc, char **argv) {
+    uint32_t flags = VFS_FSCK_REPAIR;
+
+    if (argc > 2 || (argc == 2 && strcmp(argv[1], "--check") != 0)) {
+        kprintf("Usage: fsck [--check]\n");
+        return;
+    }
+
+    if (argc == 2) {
+        flags = 0;
+    }
+
+    if (!user_is_admin()) {
+        kprintf("fsck: Permission denied (admin required)\n");
+        return;
+    }
+
+    kprintf("fsck: FAT16 has no journal; repair mode is conservative best-effort\n");
+    int result = vfs_fsck(flags);
+    if (result < 0) {
+        kprintf("fsck: failed\n");
+        return;
+    }
+
+    kprintf("fsck: %d issue(s) reported\n", result);
 }
 
 /*

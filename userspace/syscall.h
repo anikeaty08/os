@@ -15,6 +15,10 @@
 #define SYS_KILL   8
 #define SYS_WAIT   9
 #define SYS_CREATE 10
+#define SYS_UNLINK 11
+#define SYS_RENAME 12
+#define SYS_TRUNCATE 13
+#define SYS_FSCK   14
 
 static inline long syscall3(long number, long a0, long a1, long a2) {
     long ret;
@@ -41,6 +45,22 @@ static inline long sys_close(int fd) {
 
 static inline long sys_create(const char *path) {
     return syscall3(SYS_CREATE, (long)path, 0, 0);
+}
+
+static inline long sys_unlink(const char *path) {
+    return syscall3(SYS_UNLINK, (long)path, 0, 0);
+}
+
+static inline long sys_rename(const char *old_path, const char *new_path) {
+    return syscall3(SYS_RENAME, (long)old_path, (long)new_path, 0);
+}
+
+static inline long sys_truncate(const char *path, uint64_t size) {
+    return syscall3(SYS_TRUNCATE, (long)path, (long)size, 0);
+}
+
+static inline long sys_fsck(int repair) {
+    return syscall3(SYS_FSCK, repair ? 1 : 0, 0, 0);
 }
 
 static inline long sys_spawn(const char *path) {

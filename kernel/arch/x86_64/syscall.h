@@ -24,6 +24,10 @@ enum syscall_number {
     SYS_KILL = 8,
     SYS_WAIT = 9,
     SYS_CREATE = 10,
+    SYS_UNLINK = 11,
+    SYS_RENAME = 12,
+    SYS_TRUNCATE = 13,
+    SYS_FSCK = 14,
 };
 
 void syscall_init(void);

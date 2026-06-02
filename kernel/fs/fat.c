@@ -247,6 +247,11 @@ static int fat_write(struct vfs_node *node, uint64_t offset, size_t size, const 
 static struct dirent *fat_readdir(struct vfs_node *node, uint32_t index);
 static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name);
 static struct vfs_node *fat_create(struct vfs_node *parent, const char *name, uint32_t uid);
+static int fat_unlink(struct vfs_node *parent, const char *name);
+static int fat_rename(struct vfs_node *old_parent, const char *old_name,
+                      struct vfs_node *new_parent, const char *new_name);
+static int fat_truncate(struct vfs_node *node, uint64_t size);
+static int fat_fsck(struct vfs_node *root, uint32_t flags);
 
 static int fat_write_sectors(uint32_t lba, uint32_t count, const void *buffer) {
     if (!g_fat) return -1;
@@ -331,6 +336,171 @@ static bool fat_update_dir_entry(struct vfs_node *node) {
     return fat_write_sectors((uint32_t)node->meta_lba, 1, sector) >= 0;
 }
 
+static bool fat_read_dir_entry_at(uint32_t lba,
+                                  uint32_t offset,
+                                  uint8_t sector[512],
+                                  struct fat16_dir_entry **entry) {
+    if (!entry || !g_fat) return false;
+    if (offset + sizeof(struct fat16_dir_entry) > g_fat->bytes_per_sector) {
+        return false;
+    }
+    if (fat_read_sectors(lba, 1, sector) < 0) {
+        return false;
+    }
+
+    *entry = (struct fat16_dir_entry *)(sector + offset);
+    return true;
+}
+
+static int fat_find_dir_entry(struct vfs_node *parent,
+                              const char *name,
+                              struct fat16_dir_entry *out,
+                              uint32_t *out_lba,
+                              uint32_t *out_offset) {
+    if (!parent || !name || !g_fat) return -1;
+    if (!(parent->flags & VFS_DIRECTORY)) return -1;
+
+    uint32_t entries_per_sector =
+        g_fat->bytes_per_sector / sizeof(struct fat16_dir_entry);
+
+    if (parent->impl == 0) {
+        for (uint32_t i = 0; i < g_fat->root_dir_sectors; i++) {
+            uint8_t sector[512];
+            uint32_t lba = g_fat->root_dir_start_lba + i;
+            if (fat_read_sectors(lba, 1, sector) < 0) return -1;
+
+            struct fat16_dir_entry *entries = (struct fat16_dir_entry *)sector;
+            for (uint32_t slot = 0; slot < entries_per_sector; slot++) {
+                struct fat16_dir_entry *entry = &entries[slot];
+                if (entry->name[0] == 0x00) return -1;
+                if (fat_should_skip_entry(entry)) continue;
+
+                if (fat_name_match(entry, name)) {
+                    if (out) memcpy(out, entry, sizeof(*out));
+                    if (out_lba) *out_lba = lba;
+                    if (out_offset) {
+                        *out_offset = slot * sizeof(struct fat16_dir_entry);
+                    }
+                    return 0;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    uint16_t cluster = (uint16_t)parent->impl;
+    uint32_t traversed = 0;
+
+    while (!fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            return -1;
+        }
+
+        uint32_t base_lba = fat_cluster_to_lba(cluster);
+        for (uint32_t sector_index = 0;
+             sector_index < g_fat->sectors_per_cluster;
+             sector_index++) {
+            uint8_t sector[512];
+            uint32_t lba = base_lba + sector_index;
+            if (fat_read_sectors(lba, 1, sector) < 0) return -1;
+
+            struct fat16_dir_entry *entries = (struct fat16_dir_entry *)sector;
+            for (uint32_t slot = 0; slot < entries_per_sector; slot++) {
+                struct fat16_dir_entry *entry = &entries[slot];
+                if (entry->name[0] == 0x00) return -1;
+                if (fat_should_skip_entry(entry)) continue;
+
+                if (fat_name_match(entry, name)) {
+                    if (out) memcpy(out, entry, sizeof(*out));
+                    if (out_lba) *out_lba = lba;
+                    if (out_offset) {
+                        *out_offset = slot * sizeof(struct fat16_dir_entry);
+                    }
+                    return 0;
+                }
+            }
+        }
+
+        cluster = fat_get_next_cluster(cluster);
+        traversed++;
+    }
+
+    return -1;
+}
+
+static bool fat_free_chain(uint16_t start_cluster) {
+    if (start_cluster == 0) return true;
+    if (!fat_is_valid_data_cluster(start_cluster)) return false;
+
+    uint16_t cluster = start_cluster;
+    uint32_t traversed = 0;
+    bool ok = true;
+
+    while (!fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            ok = false;
+            break;
+        }
+
+        uint16_t next = fat_get_next_cluster(cluster);
+        g_fat->fat_table[cluster] = FAT16_FREE;
+        cluster = next;
+        traversed++;
+    }
+
+    return fat_flush_table() && ok;
+}
+
+static bool fat_directory_is_empty(uint16_t start_cluster) {
+    if (start_cluster == 0) return false;
+    if (!fat_is_valid_data_cluster(start_cluster)) return false;
+
+    uint16_t cluster = start_cluster;
+    uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
+    uint32_t entries_per_cluster = cluster_size / sizeof(struct fat16_dir_entry);
+    uint32_t traversed = 0;
+    uint8_t *cluster_buf = kmalloc(cluster_size);
+    if (!cluster_buf) return false;
+
+    while (!fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            kfree(cluster_buf);
+            return false;
+        }
+
+        if (fat_read_sectors(fat_cluster_to_lba(cluster),
+                             g_fat->sectors_per_cluster,
+                             cluster_buf) < 0) {
+            kfree(cluster_buf);
+            return false;
+        }
+
+        struct fat16_dir_entry *entries = (struct fat16_dir_entry *)cluster_buf;
+        for (uint32_t i = 0; i < entries_per_cluster; i++) {
+            struct fat16_dir_entry *entry = &entries[i];
+            if (entry->name[0] == 0x00) {
+                kfree(cluster_buf);
+                return true;
+            }
+            if (fat_should_skip_entry(entry)) continue;
+            if (entry->name[0] == '.' &&
+                (entry->name[1] == ' ' || entry->name[1] == '.')) {
+                continue;
+            }
+
+            kfree(cluster_buf);
+            return false;
+        }
+
+        cluster = fat_get_next_cluster(cluster);
+        traversed++;
+    }
+
+    kfree(cluster_buf);
+    return true;
+}
+
 static bool fat_make_83_name(const char *name, char out_name[8], char out_ext[3]) {
     if (!name || !*name) return false;
 
@@ -402,6 +572,10 @@ static struct vfs_node *fat_create_node_at(const struct fat16_dir_entry *entry,
     node->readdir = fat_readdir;
     node->finddir = fat_finddir;
     node->create = fat_create;
+    node->unlink = fat_unlink;
+    node->rename = fat_rename;
+    node->truncate = fat_truncate;
+    node->fsck = fat_fsck;
 
     return node;
 }
@@ -928,6 +1102,512 @@ static struct vfs_node *fat_create(struct vfs_node *parent, const char *name, ui
     return NULL;
 }
 
+static int fat_unlink(struct vfs_node *parent, const char *name) {
+    if (!parent || !name || !g_fat) return -1;
+
+    struct fat16_dir_entry entry_copy;
+    uint32_t lba;
+    uint32_t offset;
+    if (fat_find_dir_entry(parent, name, &entry_copy, &lba, &offset) < 0) {
+        return -1;
+    }
+
+    if ((entry_copy.attributes & FAT_ATTR_DIRECTORY) &&
+        !fat_directory_is_empty(entry_copy.cluster_low)) {
+        return -1;
+    }
+
+    uint8_t sector[512];
+    struct fat16_dir_entry *entry;
+    if (!fat_read_dir_entry_at(lba, offset, sector, &entry)) {
+        return -1;
+    }
+
+    uint16_t first_cluster = entry->cluster_low;
+
+    entry->name[0] = (char)0xE5;
+    if (fat_write_sectors(lba, 1, sector) < 0) {
+        return -1;
+    }
+
+    if (first_cluster != 0 && !fat_free_chain(first_cluster)) {
+        kprintf("FAT16: rm warning: directory entry deleted but cluster free failed\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int fat_rename_same_slot(uint32_t lba,
+                                uint32_t offset,
+                                const char *new_name) {
+    char fat_name[8];
+    char fat_ext[3];
+    if (!fat_make_83_name(new_name, fat_name, fat_ext)) return -1;
+
+    uint8_t sector[512];
+    struct fat16_dir_entry *entry;
+    if (!fat_read_dir_entry_at(lba, offset, sector, &entry)) return -1;
+
+    memcpy(entry->name, fat_name, sizeof(entry->name));
+    memcpy(entry->ext, fat_ext, sizeof(entry->ext));
+
+    return fat_write_sectors(lba, 1, sector) >= 0 ? 0 : -1;
+}
+
+static int fat_rename(struct vfs_node *old_parent, const char *old_name,
+                      struct vfs_node *new_parent, const char *new_name) {
+    if (!old_parent || !old_name || !new_parent || !new_name || !g_fat) return -1;
+    if (!(old_parent->flags & VFS_DIRECTORY) ||
+        !(new_parent->flags & VFS_DIRECTORY)) {
+        return -1;
+    }
+
+    struct fat16_dir_entry entry_copy;
+    uint32_t old_lba;
+    uint32_t old_offset;
+    if (fat_find_dir_entry(old_parent, old_name, &entry_copy,
+                           &old_lba, &old_offset) < 0) {
+        return -1;
+    }
+
+    if (fat_find_dir_entry(new_parent, new_name, NULL, NULL, NULL) == 0) {
+        return -1;
+    }
+
+    char fat_name[8];
+    char fat_ext[3];
+    if (!fat_make_83_name(new_name, fat_name, fat_ext)) {
+        return -1;
+    }
+
+    if (old_parent->impl == new_parent->impl) {
+        return fat_rename_same_slot(old_lba, old_offset, new_name);
+    }
+
+    if (entry_copy.attributes & FAT_ATTR_DIRECTORY) {
+        return -1;
+    }
+
+    uint32_t entries_per_sector =
+        g_fat->bytes_per_sector / sizeof(struct fat16_dir_entry);
+
+    struct vfs_node *created = NULL;
+    if (new_parent->impl == 0) {
+        for (uint32_t i = 0; i < g_fat->root_dir_sectors && !created; i++) {
+            uint8_t sector[512];
+            uint32_t lba = g_fat->root_dir_start_lba + i;
+            if (fat_read_sectors(lba, 1, sector) < 0) return -1;
+
+            struct fat16_dir_entry *entries = (struct fat16_dir_entry *)sector;
+            for (uint32_t slot = 0; slot < entries_per_sector; slot++) {
+                if (fat_directory_slot_is_free(&entries[slot])) {
+                    memcpy(entries[slot].name, fat_name, sizeof(entries[slot].name));
+                    memcpy(entries[slot].ext, fat_ext, sizeof(entries[slot].ext));
+                    entries[slot].attributes = entry_copy.attributes;
+                    entries[slot].reserved = entry_copy.reserved;
+                    entries[slot].create_time_ms = entry_copy.create_time_ms;
+                    entries[slot].create_time = entry_copy.create_time;
+                    entries[slot].create_date = entry_copy.create_date;
+                    entries[slot].access_date = entry_copy.access_date;
+                    entries[slot].cluster_high = entry_copy.cluster_high;
+                    entries[slot].modify_time = entry_copy.modify_time;
+                    entries[slot].modify_date = entry_copy.modify_date;
+                    entries[slot].cluster_low = entry_copy.cluster_low;
+                    entries[slot].file_size = entry_copy.file_size;
+                    if (fat_write_sectors(lba, 1, sector) < 0) return -1;
+                    created = fat_create_node_at(&entries[slot], lba,
+                        slot * sizeof(struct fat16_dir_entry));
+                    break;
+                }
+            }
+        }
+    } else {
+        uint16_t cluster = (uint16_t)new_parent->impl;
+        uint32_t traversed = 0;
+
+        while (!fat_is_end_cluster(cluster) && !created) {
+            if (!fat_is_valid_data_cluster(cluster) ||
+                traversed >= g_fat->total_clusters) {
+                return -1;
+            }
+
+            uint32_t base_lba = fat_cluster_to_lba(cluster);
+            for (uint32_t sector_index = 0;
+                 sector_index < g_fat->sectors_per_cluster && !created;
+                 sector_index++) {
+                uint8_t sector[512];
+                uint32_t lba = base_lba + sector_index;
+                if (fat_read_sectors(lba, 1, sector) < 0) return -1;
+
+                struct fat16_dir_entry *entries = (struct fat16_dir_entry *)sector;
+                for (uint32_t slot = 0; slot < entries_per_sector; slot++) {
+                    if (fat_directory_slot_is_free(&entries[slot])) {
+                        memcpy(&entries[slot], &entry_copy, sizeof(entry_copy));
+                        memcpy(entries[slot].name, fat_name, sizeof(entries[slot].name));
+                        memcpy(entries[slot].ext, fat_ext, sizeof(entries[slot].ext));
+                        if (fat_write_sectors(lba, 1, sector) < 0) return -1;
+                        created = fat_create_node_at(&entries[slot], lba,
+                            slot * sizeof(struct fat16_dir_entry));
+                        break;
+                    }
+                }
+            }
+
+            cluster = fat_get_next_cluster(cluster);
+            traversed++;
+        }
+    }
+
+    if (!created) {
+        return -1;
+    }
+
+    uint8_t old_sector[512];
+    struct fat16_dir_entry *old_entry;
+    if (!fat_read_dir_entry_at(old_lba, old_offset, old_sector, &old_entry)) {
+        return -1;
+    }
+
+    old_entry->name[0] = (char)0xE5;
+    return fat_write_sectors(old_lba, 1, old_sector) >= 0 ? 0 : -1;
+}
+
+static int fat_truncate(struct vfs_node *node, uint64_t size) {
+    if (!node || !g_fat) return -1;
+    if (node->flags & VFS_DIRECTORY) return -1;
+    if (size > UINT32_MAX) return -1;
+
+    if (size == node->size) return 0;
+
+    if (size > node->size) {
+        uint8_t zero = 0;
+        if (size == 0) return 0;
+        return fat_write(node, size - 1, 1, &zero) == 1 ? 0 : -1;
+    }
+
+    uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
+    uint16_t first_cluster = (uint16_t)node->impl;
+    uint16_t free_from = 0;
+
+    if (size == 0 || first_cluster == 0) {
+        free_from = first_cluster;
+        node->size = 0;
+        node->impl = 0;
+        node->inode = 0;
+        if (!fat_update_dir_entry(node)) return -1;
+        if (free_from != 0 && !fat_free_chain(free_from)) return -1;
+        return 0;
+    }
+
+    uint32_t keep_clusters = (uint32_t)((size + cluster_size - 1) / cluster_size);
+    uint16_t cluster = first_cluster;
+    uint32_t traversed = 0;
+
+    for (uint32_t i = 1; i < keep_clusters; i++) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            return -1;
+        }
+        cluster = fat_get_next_cluster(cluster);
+        traversed++;
+    }
+
+    if (!fat_is_valid_data_cluster(cluster)) return -1;
+
+    free_from = fat_get_next_cluster(cluster);
+    node->size = size;
+    if (!fat_update_dir_entry(node)) return -1;
+
+    g_fat->fat_table[cluster] = FAT16_END_MAX;
+    if (!fat_flush_table()) return -1;
+
+    if (!fat_is_end_cluster(free_from) && !fat_free_chain(free_from)) {
+        return -1;
+    }
+
+    return 0;
+}
+
+#define FAT_FSCK_MAX_DEPTH 8
+
+static bool fat_entry_is_dot(const struct fat16_dir_entry *entry) {
+    return entry->name[0] == '.' &&
+           (entry->name[1] == ' ' || entry->name[1] == '.');
+}
+
+static bool fat_fsck_update_entry(uint32_t lba,
+                                  uint32_t offset,
+                                  uint16_t first_cluster,
+                                  uint32_t file_size) {
+    uint8_t sector[512];
+    struct fat16_dir_entry *entry;
+    if (!fat_read_dir_entry_at(lba, offset, sector, &entry)) return false;
+
+    entry->cluster_low = first_cluster;
+    entry->file_size = file_size;
+    return fat_write_sectors(lba, 1, sector) >= 0;
+}
+
+static uint32_t fat_fsck_check_chain(struct fat16_dir_entry *entry,
+                                     uint32_t entry_lba,
+                                     uint32_t entry_offset,
+                                     uint8_t *refs,
+                                     bool repair,
+                                     uint32_t *issues,
+                                     uint32_t *fixes) {
+    uint16_t first = entry->cluster_low;
+    uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
+    bool is_dir = (entry->attributes & FAT_ATTR_DIRECTORY) != 0;
+
+    if (!is_dir && entry->file_size == 0 && first != 0) {
+        (*issues)++;
+        kprintf("FAT16 fsck: zero-size file owns cluster %u\n", first);
+        if (repair) {
+            if (fat_fsck_update_entry(entry_lba, entry_offset, 0, 0)) {
+                entry->cluster_low = 0;
+                (*fixes)++;
+            }
+        }
+        return 0;
+    }
+
+    if (first == 0) {
+        if (!is_dir && entry->file_size != 0) {
+            (*issues)++;
+            kprintf("FAT16 fsck: file has size %u but no cluster\n",
+                    entry->file_size);
+            if (repair && fat_fsck_update_entry(entry_lba, entry_offset, 0, 0)) {
+                entry->file_size = 0;
+                (*fixes)++;
+            }
+        }
+        return 0;
+    }
+
+    if (!fat_is_valid_data_cluster(first)) {
+        (*issues)++;
+        kprintf("FAT16 fsck: invalid start cluster %u\n", first);
+        if (repair && fat_fsck_update_entry(entry_lba, entry_offset, 0, 0)) {
+            entry->cluster_low = 0;
+            entry->file_size = 0;
+            (*fixes)++;
+        }
+        return 0;
+    }
+
+    uint16_t cluster = first;
+    uint16_t prev = 0;
+    uint32_t chain_clusters = 0;
+    uint32_t traversed = 0;
+
+    while (!fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            (*issues)++;
+            kprintf("FAT16 fsck: broken chain after cluster %u\n", prev);
+            if (repair && fat_is_valid_data_cluster(prev)) {
+                g_fat->fat_table[prev] = FAT16_END_MAX;
+                (*fixes)++;
+            }
+            break;
+        }
+
+        if (refs[cluster]) {
+            (*issues)++;
+            kprintf("FAT16 fsck: cross-linked or looping cluster %u\n", cluster);
+            if (repair) {
+                if (fat_is_valid_data_cluster(prev)) {
+                    g_fat->fat_table[prev] = FAT16_END_MAX;
+                } else {
+                    entry->cluster_low = 0;
+                    fat_fsck_update_entry(entry_lba, entry_offset, 0, 0);
+                }
+                (*fixes)++;
+            }
+            break;
+        }
+
+        refs[cluster] = 1;
+        chain_clusters++;
+
+        uint16_t next = fat_get_next_cluster(cluster);
+        if (next == FAT16_FREE || next == FAT16_BAD) {
+            (*issues)++;
+            kprintf("FAT16 fsck: cluster %u points to %s\n",
+                    cluster, next == FAT16_FREE ? "free" : "bad");
+            if (repair) {
+                g_fat->fat_table[cluster] = FAT16_END_MAX;
+                (*fixes)++;
+            }
+            break;
+        }
+
+        prev = cluster;
+        cluster = next;
+        traversed++;
+    }
+
+    if (!is_dir) {
+        uint64_t max_bytes = (uint64_t)chain_clusters * cluster_size;
+        if (entry->file_size > max_bytes) {
+            (*issues)++;
+            kprintf("FAT16 fsck: file size %u exceeds chain bytes %llu\n",
+                    entry->file_size, max_bytes);
+            if (repair &&
+                fat_fsck_update_entry(entry_lba, entry_offset,
+                                      entry->cluster_low, (uint32_t)max_bytes)) {
+                entry->file_size = (uint32_t)max_bytes;
+                (*fixes)++;
+            }
+        }
+    }
+
+    return chain_clusters;
+}
+
+static void fat_fsck_scan_directory(uint16_t start_cluster,
+                                    bool is_root,
+                                    uint8_t *refs,
+                                    bool repair,
+                                    uint32_t *issues,
+                                    uint32_t *fixes,
+                                    uint32_t depth) {
+    if (depth > FAT_FSCK_MAX_DEPTH) {
+        (*issues)++;
+        kprintf("FAT16 fsck: directory recursion limit reached\n");
+        return;
+    }
+
+    uint32_t entries_per_sector =
+        g_fat->bytes_per_sector / sizeof(struct fat16_dir_entry);
+
+    if (is_root) {
+        for (uint32_t i = 0; i < g_fat->root_dir_sectors; i++) {
+            uint8_t sector[512];
+            uint32_t lba = g_fat->root_dir_start_lba + i;
+            if (fat_read_sectors(lba, 1, sector) < 0) {
+                (*issues)++;
+                kprintf("FAT16 fsck: failed reading root directory sector %u\n", i);
+                return;
+            }
+
+            struct fat16_dir_entry *entries = (struct fat16_dir_entry *)sector;
+            for (uint32_t slot = 0; slot < entries_per_sector; slot++) {
+                struct fat16_dir_entry *entry = &entries[slot];
+                if (entry->name[0] == 0x00) return;
+                if (fat_should_skip_entry(entry) || fat_entry_is_dot(entry)) continue;
+
+                uint32_t offset = slot * sizeof(struct fat16_dir_entry);
+                fat_fsck_check_chain(entry, lba, offset, refs,
+                                     repair, issues, fixes);
+                if ((entry->attributes & FAT_ATTR_DIRECTORY) &&
+                    fat_is_valid_data_cluster(entry->cluster_low)) {
+                    fat_fsck_scan_directory(entry->cluster_low, false, refs,
+                                            repair, issues, fixes, depth + 1);
+                }
+            }
+        }
+        return;
+    }
+
+    uint16_t cluster = start_cluster;
+    uint32_t traversed = 0;
+    uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
+    uint32_t entries_per_cluster = cluster_size / sizeof(struct fat16_dir_entry);
+    uint8_t *cluster_buf = kmalloc(cluster_size);
+    if (!cluster_buf) {
+        (*issues)++;
+        kprintf("FAT16 fsck: out of memory scanning directory\n");
+        return;
+    }
+
+    while (!fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            (*issues)++;
+            kprintf("FAT16 fsck: bad directory chain at cluster %u\n", cluster);
+            break;
+        }
+
+        uint32_t lba = fat_cluster_to_lba(cluster);
+        if (fat_read_sectors(lba, g_fat->sectors_per_cluster, cluster_buf) < 0) {
+            (*issues)++;
+            kprintf("FAT16 fsck: failed reading directory cluster %u\n", cluster);
+            break;
+        }
+
+        struct fat16_dir_entry *entries = (struct fat16_dir_entry *)cluster_buf;
+        for (uint32_t slot = 0; slot < entries_per_cluster; slot++) {
+            struct fat16_dir_entry *entry = &entries[slot];
+            if (entry->name[0] == 0x00) {
+                kfree(cluster_buf);
+                return;
+            }
+            if (fat_should_skip_entry(entry) || fat_entry_is_dot(entry)) continue;
+
+            uint32_t entry_lba =
+                lba + (slot * sizeof(struct fat16_dir_entry)) / g_fat->bytes_per_sector;
+            uint32_t offset =
+                (slot * sizeof(struct fat16_dir_entry)) % g_fat->bytes_per_sector;
+            fat_fsck_check_chain(entry, entry_lba, offset, refs,
+                                 repair, issues, fixes);
+
+            if ((entry->attributes & FAT_ATTR_DIRECTORY) &&
+                fat_is_valid_data_cluster(entry->cluster_low)) {
+                fat_fsck_scan_directory(entry->cluster_low, false, refs,
+                                        repair, issues, fixes, depth + 1);
+            }
+        }
+
+        cluster = fat_get_next_cluster(cluster);
+        traversed++;
+    }
+
+    kfree(cluster_buf);
+}
+
+static int fat_fsck(struct vfs_node *root, uint32_t flags) {
+    (void)root;
+    if (!g_fat || !g_fat->fat_table) return -1;
+
+    bool repair = (flags & VFS_FSCK_REPAIR) != 0;
+    uint32_t ref_count = g_fat->total_clusters + 2;
+    uint8_t *refs = kmalloc(ref_count);
+    if (!refs) return -1;
+    memset(refs, 0, ref_count);
+
+    uint32_t issues = 0;
+    uint32_t fixes = 0;
+
+    kprintf("FAT16 fsck: starting %s pass\n", repair ? "repair" : "check-only");
+    kprintf("FAT16 fsck: no journal is available; recovery is best-effort FAT repair\n");
+
+    fat_fsck_scan_directory(0, true, refs, repair, &issues, &fixes, 0);
+
+    for (uint32_t cluster = 2; cluster < g_fat->total_clusters + 2; cluster++) {
+        uint16_t value = g_fat->fat_table[cluster];
+        if (value == FAT16_FREE || value == FAT16_BAD) continue;
+        if (refs[cluster]) continue;
+
+        issues++;
+        kprintf("FAT16 fsck: orphan cluster %u\n", cluster);
+        if (repair) {
+            g_fat->fat_table[cluster] = FAT16_FREE;
+            fixes++;
+        }
+    }
+
+    if (repair && !fat_flush_table()) {
+        kfree(refs);
+        kprintf("FAT16 fsck: failed flushing FAT repairs\n");
+        return -1;
+    }
+
+    kprintf("FAT16 fsck: complete, issues=%u fixes=%u mode=%s\n",
+            issues, fixes, repair ? "repair" : "check-only");
+
+    kfree(refs);
+    return (int)issues;
+}
+
 /*
  * Check if drive contains FAT16 filesystem
  */
@@ -1019,6 +1699,10 @@ struct vfs_node *fat16_init(int drive, uint32_t partition_lba) {
     root->readdir = fat_readdir;
     root->finddir = fat_finddir;
     root->create = fat_create;
+    root->unlink = fat_unlink;
+    root->rename = fat_rename;
+    root->truncate = fat_truncate;
+    root->fsck = fat_fsck;
 
     kprintf("FAT16: Mounted drive %d (%u clusters, %u bytes/cluster)\n",
             drive, g_fat->total_clusters,

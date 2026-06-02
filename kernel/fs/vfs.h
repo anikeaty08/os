@@ -62,8 +62,15 @@ typedef int (*write_fn)(struct vfs_node *node, uint64_t offset, size_t size, con
 typedef struct dirent *(*readdir_fn)(struct vfs_node *node, uint32_t index);
 typedef struct vfs_node *(*finddir_fn)(struct vfs_node *node, const char *name);
 typedef struct vfs_node *(*create_fn)(struct vfs_node *parent, const char *name, uint32_t uid);
+typedef int (*unlink_fn)(struct vfs_node *parent, const char *name);
+typedef int (*rename_fn)(struct vfs_node *old_parent, const char *old_name,
+                         struct vfs_node *new_parent, const char *new_name);
+typedef int (*truncate_fn)(struct vfs_node *node, uint64_t size);
+typedef int (*fsck_fn)(struct vfs_node *root, uint32_t flags);
 typedef int (*open_fn)(struct vfs_node *node);
 typedef int (*close_fn)(struct vfs_node *node);
+
+#define VFS_FSCK_REPAIR 0x01
 
 /*
  * VFS Node (inode-like structure)
@@ -86,6 +93,10 @@ struct vfs_node {
     readdir_fn readdir;
     finddir_fn finddir;
     create_fn create;
+    unlink_fn unlink;
+    rename_fn rename;
+    truncate_fn truncate;
+    fsck_fn fsck;
     open_fn open;
     close_fn close;
 
@@ -129,6 +140,18 @@ struct vfs_node *vfs_open(const char *path);
 
 /* Create a regular file by path */
 struct vfs_node *vfs_create(const char *path, uint32_t uid);
+
+/* Delete a file or empty directory by path */
+int vfs_unlink(const char *path);
+
+/* Rename or move a file by path */
+int vfs_rename(const char *old_path, const char *new_path);
+
+/* Resize a regular file */
+int vfs_truncate(struct vfs_node *node, uint64_t size);
+
+/* Run filesystem check/recovery on the mounted root */
+int vfs_fsck(uint32_t flags);
 
 /* Close file */
 void vfs_close(struct vfs_node *node);

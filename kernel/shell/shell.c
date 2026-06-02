@@ -109,6 +109,14 @@ void shell_execute(const char *line) {
         cmd_touch(argc, argv);
     } else if (strcmp(cmd, "write") == 0) {
         cmd_write(argc, argv);
+    } else if (strcmp(cmd, "rm") == 0 || strcmp(cmd, "del") == 0) {
+        cmd_rm(argc, argv);
+    } else if (strcmp(cmd, "mv") == 0 || strcmp(cmd, "rename") == 0) {
+        cmd_mv(argc, argv);
+    } else if (strcmp(cmd, "truncate") == 0) {
+        cmd_truncate(argc, argv);
+    } else if (strcmp(cmd, "fsck") == 0) {
+        cmd_fsck(argc, argv);
     } else if (strcmp(cmd, "run") == 0) {
         cmd_run(argc, argv);
     } else if (strcmp(cmd, "ps") == 0) {

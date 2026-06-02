@@ -165,6 +165,12 @@ static int64_t sys_create(const char *path) {
         return -1;
     }
 
+    if (!vfs_can_write_as(node, current ? current->uid : 0,
+                          current ? current->is_admin : true)) {
+        vfs_close(node);
+        return -1;
+    }
+
     int fd = process_fd_open(current, node);
     if (fd < 0) {
         vfs_close(node);
@@ -172,6 +178,71 @@ static int64_t sys_create(const char *path) {
     }
 
     return fd;
+}
+
+static int64_t sys_unlink(const char *path) {
+    char kernel_path[USER_PATH_MAX];
+
+    if (copy_user_string((uint64_t)path, kernel_path, sizeof(kernel_path)) < 0) {
+        return -1;
+    }
+
+    struct process *current = process_current();
+    struct vfs_node *node = vfs_resolve_path(kernel_path);
+    if (!node ||
+        !vfs_can_write_as(node, current ? current->uid : 0,
+                          current ? current->is_admin : true)) {
+        return -1;
+    }
+
+    return vfs_unlink(kernel_path);
+}
+
+static int64_t sys_rename(const char *old_path, const char *new_path) {
+    char kernel_old[USER_PATH_MAX];
+    char kernel_new[USER_PATH_MAX];
+
+    if (copy_user_string((uint64_t)old_path, kernel_old, sizeof(kernel_old)) < 0 ||
+        copy_user_string((uint64_t)new_path, kernel_new, sizeof(kernel_new)) < 0) {
+        return -1;
+    }
+
+    struct process *current = process_current();
+    struct vfs_node *node = vfs_resolve_path(kernel_old);
+    if (!node ||
+        !vfs_can_write_as(node, current ? current->uid : 0,
+                          current ? current->is_admin : true)) {
+        return -1;
+    }
+
+    return vfs_rename(kernel_old, kernel_new);
+}
+
+static int64_t sys_truncate(const char *path, uint64_t size) {
+    char kernel_path[USER_PATH_MAX];
+
+    if (copy_user_string((uint64_t)path, kernel_path, sizeof(kernel_path)) < 0) {
+        return -1;
+    }
+
+    struct process *current = process_current();
+    struct vfs_node *node = vfs_resolve_path(kernel_path);
+    if (!node || vfs_is_directory(node) ||
+        !vfs_can_write_as(node, current ? current->uid : 0,
+                          current ? current->is_admin : true)) {
+        return -1;
+    }
+
+    return vfs_truncate(node, size);
+}
+
+static int64_t sys_fsck(uint64_t repair) {
+    struct process *current = process_current();
+    if (current && !current->is_admin) {
+        return -1;
+    }
+
+    return vfs_fsck(repair ? VFS_FSCK_REPAIR : 0);
 }
 
 static int64_t sys_spawn(const char *path) {
@@ -294,6 +365,23 @@ void syscall_handler(struct interrupt_frame *frame) {
 
         case SYS_CREATE:
             result = sys_create((const char *)frame->rdi);
+            break;
+
+        case SYS_UNLINK:
+            result = sys_unlink((const char *)frame->rdi);
+            break;
+
+        case SYS_RENAME:
+            result = sys_rename((const char *)frame->rdi,
+                                (const char *)frame->rsi);
+            break;
+
+        case SYS_TRUNCATE:
+            result = sys_truncate((const char *)frame->rdi, frame->rsi);
+            break;
+
+        case SYS_FSCK:
+            result = sys_fsck(frame->rdi);
             break;
 
         case SYS_SPAWN:
