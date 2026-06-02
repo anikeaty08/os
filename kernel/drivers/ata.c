@@ -7,6 +7,7 @@
  */
 
 #include "ata.h"
+#include "ahci.h"
 #include "../arch/x86_64/io.h"
 #include "../lib/string.h"
 #include "../lib/stdio.h"
@@ -222,6 +223,7 @@ void ata_init(void) {
  * Check if drive is present
  */
 bool ata_drive_present(int drive) {
+    if (drive >= 4) return ahci_drive_present(drive - 4);
     if (drive < 0 || drive > 3) return false;
     return drives[drive].present;
 }
@@ -329,6 +331,10 @@ static int ata_write_lba28(struct ata_drive *drive, uint32_t lba, uint32_t count
  * Read sectors from disk
  */
 int ata_read(int drive_num, uint64_t lba, uint32_t count, void *buffer) {
+    if (drive_num >= 4) {
+        return ahci_read(drive_num - 4, lba, count, buffer);
+    }
+
     if (drive_num < 0 || drive_num > 3) {
         return -1;
     }
@@ -359,6 +365,10 @@ int ata_read(int drive_num, uint64_t lba, uint32_t count, void *buffer) {
  * Write sectors to disk
  */
 int ata_write(int drive_num, uint64_t lba, uint32_t count, const void *buffer) {
+    if (drive_num >= 4) {
+        return ahci_write(drive_num - 4, lba, count, buffer);
+    }
+
     if (drive_num < 0 || drive_num > 3) {
         return -1;
     }

@@ -6,6 +6,7 @@
 #include "gui.h"
 #include "../arch/x86_64/apic.h"
 #include "../drivers/acpi.h"
+#include "../drivers/ahci.h"
 #include "../drivers/graphics.h"
 #include "../drivers/pci.h"
 #include "../drivers/pit.h"
@@ -271,8 +272,14 @@ static void draw_drivers(void) {
     label_u64(x + 12, y + 66, "Probe failures", summary.failures);
 
     text_px(x + 12, y + 96, "AHCI", GUI_TEXT, GUI_PANEL);
-    text_px(x + 120, y + 96, summary.ahci_matches ? "detected" : "not found",
-            summary.ahci_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
+    if (ahci_drive_count() > 0) {
+        char buf[48];
+        ksnprintf(buf, sizeof(buf), "%u usable disk(s)", (uint32_t)ahci_drive_count());
+        text_px(x + 120, y + 96, buf, GUI_OK, GUI_PANEL);
+    } else {
+        text_px(x + 120, y + 96, summary.ahci_matches ? "detected" : "not found",
+                summary.ahci_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
+    }
     text_px(x + 12, y + 112, "NVMe", GUI_TEXT, GUI_PANEL);
     text_px(x + 120, y + 112, summary.nvme_matches ? "detected" : "not found",
             summary.nvme_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
@@ -283,8 +290,8 @@ static void draw_drivers(void) {
     text_px(x + 120, y + 144, summary.net_matches ? "detected" : "not found",
             summary.net_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
 
-    text_px(x + 12, y + 178, "Storage and network stacks are still probe-only.", GUI_WARN, GUI_PANEL);
-    text_px(x + 12, y + 194, "Serial logs contain per-device BAR and capability detail.", GUI_MUTED, GUI_PANEL);
+    text_px(x + 12, y + 178, "AHCI SATA exposes polling sector read/write.", GUI_OK, GUI_PANEL);
+    text_px(x + 12, y + 194, "NVMe, USB, and network remain probe-only.", GUI_WARN, GUI_PANEL);
 }
 
 static void draw_processes(void) {

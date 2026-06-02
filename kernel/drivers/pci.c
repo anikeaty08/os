@@ -42,6 +42,19 @@ uint8_t pci_config_read8(uint8_t bus, uint8_t device, uint8_t function, uint8_t 
     return (uint8_t)((value >> ((offset & 3) * 8)) & 0xFF);
 }
 
+void pci_config_write32(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset, uint32_t value) {
+    outl(PCI_CONFIG_ADDRESS, pci_config_address(bus, device, function, offset));
+    outl(PCI_CONFIG_DATA, value);
+}
+
+void pci_config_write16(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset, uint16_t value) {
+    uint32_t old = pci_config_read32(bus, device, function, offset);
+    uint32_t shift = (uint32_t)((offset & 2) * 8);
+    uint32_t mask = 0xFFFFU << shift;
+    uint32_t next = (old & ~mask) | ((uint32_t)value << shift);
+    pci_config_write32(bus, device, function, offset, next);
+}
+
 uint8_t pci_bar_count(const struct pci_device *dev) {
     if (!dev) {
         return 0;
