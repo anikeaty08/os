@@ -29,6 +29,8 @@ void cmd_cat(int argc, char **argv);
 void cmd_write(int argc, char **argv);
 void cmd_run(int argc, char **argv);
 void cmd_ps(int argc, char **argv);
+void cmd_whoami(int argc, char **argv);
+void cmd_users(int argc, char **argv);
 void cmd_aniket(int argc, char **argv);
 
 /* Phase 1: New AstraOS Commands */

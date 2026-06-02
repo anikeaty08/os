@@ -111,6 +111,10 @@ void shell_execute(const char *line) {
         cmd_run(argc, argv);
     } else if (strcmp(cmd, "ps") == 0) {
         cmd_ps(argc, argv);
+    } else if (strcmp(cmd, "whoami") == 0) {
+        cmd_whoami(argc, argv);
+    } else if (strcmp(cmd, "users") == 0) {
+        cmd_users(argc, argv);
     } else if (strcmp(cmd, "aniket") == 0) {
         cmd_aniket(argc, argv);
     } else if (strcmp(cmd, "status") == 0) {

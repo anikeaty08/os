@@ -261,21 +261,36 @@ static bool user_add_persistent_record(char *line) {
     char *cursor = line;
     char *username = next_user_field(&cursor);
     char *hash = next_user_field(&cursor);
+    char *uid_field = next_user_field(&cursor);
     char *admin = next_user_field(&cursor);
     char *active = next_user_field(&cursor);
     char *created = next_user_field(&cursor);
     char *last_login = next_user_field(&cursor);
+    bool has_uid = true;
+    uint64_t parsed_uid = 0;
     bool is_admin = false;
     bool is_active = false;
     uint64_t created_time = 0;
     uint64_t last_login_time = 0;
 
-    if (!username || !hash || !admin || !active || !created || !last_login) {
+    if (!username || !hash || !uid_field || !admin || !active || !created) {
         return false;
     }
 
-    if (cursor) {
-        return false;
+    if (!last_login) {
+        has_uid = false;
+        last_login = created;
+        created = active;
+        active = admin;
+        admin = uid_field;
+        parsed_uid = (uint64_t)user_count;
+    } else {
+        if (cursor) {
+            return false;
+        }
+        if (!parse_u64_field(uid_field, &parsed_uid) || parsed_uid > UINT32_MAX) {
+            return false;
+        }
     }
 
     if (user_count >= MAX_USERS || user_record_exists(username)) {
@@ -291,12 +306,18 @@ static bool user_add_persistent_record(char *line) {
         return false;
     }
 
+    for (int i = 0; i < user_count; i++) {
+        if (users[i].uid == (uint32_t)parsed_uid) {
+            return false;
+        }
+    }
+
     User *user = &users[user_count++];
     strncpy(user->username, username, MAX_USERNAME_LEN - 1);
     user->username[MAX_USERNAME_LEN - 1] = '\0';
     strncpy(user->password_hash, hash, MAX_PASSWORD_LEN - 1);
     user->password_hash[MAX_PASSWORD_LEN - 1] = '\0';
-    user->uid = (uint32_t)user_count - 1;
+    user->uid = (uint32_t)parsed_uid;
     user->is_admin = is_admin;
     user->is_active = is_active;
     user->created_time = created_time;
@@ -478,6 +499,13 @@ bool user_delete(const char *username) {
 
 User* user_get_current(void) {
     return current_user;
+}
+
+const User* user_get_by_index(int index) {
+    if (index < 0 || index >= user_count) {
+        return NULL;
+    }
+    return &users[index];
 }
 
 const char* user_get_current_name(void) {

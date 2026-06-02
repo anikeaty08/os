@@ -22,6 +22,36 @@
 /* External framebuffer functions */
 extern void fb_clear(void);
 
+static bool parse_u64_arg(const char *s, uint64_t *out) {
+    uint64_t value = 0;
+
+    if (!s || !*s || !out) {
+        return false;
+    }
+
+    for (size_t i = 0; s[i]; i++) {
+        if (s[i] < '0' || s[i] > '9') {
+            return false;
+        }
+
+        uint64_t digit = (uint64_t)(s[i] - '0');
+        if (value > (UINT64_MAX - digit) / 10) {
+            return false;
+        }
+        value = value * 10 + digit;
+    }
+
+    *out = value;
+    return true;
+}
+
+static void print_perm_bits(struct vfs_node *node) {
+    kprintf("%c%c%c",
+            vfs_can_read(node) ? 'r' : '-',
+            vfs_can_write(node) ? 'w' : '-',
+            vfs_can_exec(node) ? 'x' : '-');
+}
+
 /*
  * help - Display available commands
  */
@@ -56,6 +86,8 @@ void cmd_help(int argc, char **argv) {
     kprintf("\n%sUtilities:%s\n", theme->info, ANSI_RESET);
     kprintf("  %secho%s      - Print text\n", theme->accent2, ANSI_RESET);
     kprintf("  %sps%s        - List processes\n", theme->accent2, ANSI_RESET);
+    kprintf("  %swhoami%s    - Show current user identity\n", theme->accent2, ANSI_RESET);
+    kprintf("  %susers%s     - List loaded user records\n", theme->accent2, ANSI_RESET);
     kprintf("  %stest%s      - Run tests\n", theme->accent2, ANSI_RESET);
     kprintf("  %sversion%s   - Show version\n", theme->accent2, ANSI_RESET);
     kprintf("  %shelp%s      - This help\n", theme->accent2, ANSI_RESET);
@@ -243,9 +275,13 @@ void cmd_ls(int argc, char **argv) {
         struct vfs_node *child = vfs_finddir(node, entry->name);
         if (child) {
             if (vfs_is_directory(child)) {
-                kprintf("  [DIR]  %s\n", entry->name);
+                kprintf("  [DIR]  ");
+                print_perm_bits(child);
+                kprintf(" uid=%u  %s\n", child->uid, entry->name);
             } else {
-                kprintf("  %6llu  %s\n", child->size, entry->name);
+                kprintf("  %6llu  ", child->size);
+                print_perm_bits(child);
+                kprintf(" uid=%u  %s\n", child->uid, entry->name);
             }
             count++;
         }
@@ -326,9 +362,20 @@ void cmd_cat(int argc, char **argv) {
  * write - Overwrite bytes in an existing file
  */
 void cmd_write(int argc, char **argv) {
+    uint64_t offset = 0;
+    int text_arg = 2;
+
     if (argc < 3) {
-        kprintf("Usage: write <filename> <text>\n");
+        kprintf("Usage: write <filename> [@offset] <text>\n");
         return;
+    }
+
+    if (argv[2][0] == '@') {
+        if (argc < 4 || !parse_u64_arg(argv[2] + 1, &offset)) {
+            kprintf("Usage: write <filename> [@offset] <text>\n");
+            return;
+        }
+        text_arg = 3;
     }
 
     struct vfs_node *node = vfs_open(argv[1]);
@@ -349,10 +396,16 @@ void cmd_write(int argc, char **argv) {
         return;
     }
 
+    if (offset >= vfs_size(node)) {
+        kprintf("write: offset beyond end of file\n");
+        vfs_close(node);
+        return;
+    }
+
     char buffer[512];
     size_t out = 0;
-    for (int i = 2; i < argc && out < sizeof(buffer); i++) {
-        if (i > 2 && out < sizeof(buffer)) {
+    for (int i = text_arg; i < argc && out < sizeof(buffer); i++) {
+        if (i > text_arg && out < sizeof(buffer)) {
             buffer[out++] = ' ';
         }
         for (size_t j = 0; argv[i][j] && out < sizeof(buffer); j++) {
@@ -360,7 +413,7 @@ void cmd_write(int argc, char **argv) {
         }
     }
 
-    int bytes = vfs_write(node, 0, out, (const uint8_t *)buffer);
+    int bytes = vfs_write(node, offset, out, (const uint8_t *)buffer);
     vfs_close(node);
 
     if (bytes < 0) {
@@ -459,6 +512,36 @@ void cmd_ps(int argc, char **argv) {
     uint64_t count = process_count();
     kprintf("\nTotal processes: %llu\n", count);
     kprintf("Context switches: %llu\n\n", scheduler_get_switches());
+}
+
+void cmd_whoami(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+
+    kprintf("user=%s uid=%u admin=%s\n",
+            user_get_current_name(),
+            user_get_current_uid(),
+            user_is_admin() ? "yes" : "no");
+}
+
+void cmd_users(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+
+    kprintf("\nUsers:\n");
+    kprintf("------\n");
+    for (int i = 0; i < user_count_users(); i++) {
+        const User *user = user_get_by_index(i);
+        if (!user) continue;
+
+        kprintf("  uid=%u name=%s admin=%s active=%s last_login=%llu\n",
+                user->uid,
+                user->username,
+                user->is_admin ? "yes" : "no",
+                user->is_active ? "yes" : "no",
+                user->last_login);
+    }
+    kprintf("\n");
 }
 
 /*

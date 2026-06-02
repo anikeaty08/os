@@ -18,10 +18,10 @@
 
 /*
  * Persistent user record format, one record per line:
- * username:password_hash:is_admin:is_active:created_time:last_login
+ * username:password_hash:uid:is_admin:is_active:created_time:last_login
  *
  * password_hash is the 64-character SHA-256 hex output from hash_password().
- * Legacy 16-character demo hashes are accepted for compatibility.
+ * Legacy records without uid and legacy 16-character demo hashes are accepted.
  * Boolean fields are 0 or 1. Lines beginning with # are ignored.
  */
 
@@ -43,6 +43,7 @@ bool user_authenticate(const char *username, const char *password);
 bool user_exists(const char *username);
 bool user_delete(const char *username);
 User* user_get_current(void);
+const User* user_get_by_index(int index);
 const char* user_get_current_name(void);
 bool user_is_admin(void);
 uint32_t user_get_current_uid(void);

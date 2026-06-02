@@ -51,6 +51,10 @@ void syscall_init(void) {
 }
 
 static int64_t sys_write(uint64_t fd, const char *buf, size_t len) {
+    if (len == 0) {
+        return 0;
+    }
+
     if (!user_range_valid((uint64_t)buf, len)) {
         return -1;
     }
@@ -73,6 +77,10 @@ static int64_t sys_write(uint64_t fd, const char *buf, size_t len) {
 }
 
 static int64_t sys_read(uint64_t fd, char *buf, size_t len) {
+    if (len == 0) {
+        return 0;
+    }
+
     if (!user_range_writable((uint64_t)buf, len)) {
         return -1;
     }
