@@ -246,6 +246,7 @@ static bool fat_name_match(const struct fat16_dir_entry *entry, const char *name
 
 /* Forward declarations */
 static int fat_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t *buffer);
+static int fat_write(struct vfs_node *node, uint64_t offset, size_t size, const uint8_t *buffer);
 static struct dirent *fat_readdir(struct vfs_node *node, uint32_t index);
 static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name);
 
@@ -263,7 +264,7 @@ static struct vfs_node *fat_create_node(const struct fat16_dir_entry *entry) {
         node->permissions = VFS_PERM_READ | VFS_PERM_EXEC;
     } else {
         node->flags = VFS_FILE;
-        node->permissions = VFS_PERM_READ | VFS_PERM_EXEC;
+        node->permissions = VFS_PERM_READ | VFS_PERM_EXEC | VFS_PERM_WRITE;
     }
 
     node->size = entry->file_size;
@@ -272,6 +273,7 @@ static struct vfs_node *fat_create_node(const struct fat16_dir_entry *entry) {
 
     /* Set operations */
     node->read = fat_read;
+    node->write = fat_write;
     node->readdir = fat_readdir;
     node->finddir = fat_finddir;
 
@@ -344,6 +346,76 @@ static int fat_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t
 
     kfree(sector_buf);
     return bytes_read;
+}
+
+/*
+ * Write within an existing FAT16 file cluster chain.
+ *
+ * This intentionally does not extend files, allocate clusters, or update
+ * directory metadata yet. It only mutates bytes that are already part of an
+ * existing file.
+ */
+static int fat_write(struct vfs_node *node, uint64_t offset, size_t size, const uint8_t *buffer) {
+    if (!node || !buffer || !g_fat) return -1;
+    if (node->flags & VFS_DIRECTORY) return -1;
+    if (size == 0) return 0;
+    if (offset >= node->size) return 0;
+    if (size > node->size - offset) {
+        size = node->size - offset;
+    }
+
+    uint16_t cluster = (uint16_t)node->impl;
+    uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
+    uint32_t bytes_written = 0;
+    uint32_t traversed = 0;
+
+    uint8_t *cluster_buf = kmalloc(cluster_size);
+    if (!cluster_buf) return -1;
+
+    while (offset >= cluster_size && !fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            kfree(cluster_buf);
+            return -1;
+        }
+        offset -= cluster_size;
+        cluster = fat_get_next_cluster(cluster);
+        traversed++;
+    }
+
+    while (bytes_written < size && !fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            kfree(cluster_buf);
+            return -1;
+        }
+
+        uint32_t lba = fat_cluster_to_lba(cluster);
+        if (fat_read_sectors(lba, g_fat->sectors_per_cluster, cluster_buf) < 0) {
+            kfree(cluster_buf);
+            return -1;
+        }
+
+        uint32_t cluster_offset = offset % cluster_size;
+        uint32_t to_copy = cluster_size - cluster_offset;
+        if (to_copy > size - bytes_written) {
+            to_copy = size - bytes_written;
+        }
+
+        memcpy(cluster_buf + cluster_offset, buffer + bytes_written, to_copy);
+
+        if (ata_write(g_fat->drive, g_fat->partition_lba + lba,
+                      g_fat->sectors_per_cluster, cluster_buf) < 0) {
+            kfree(cluster_buf);
+            return -1;
+        }
+
+        bytes_written += to_copy;
+        offset = 0;
+        cluster = fat_get_next_cluster(cluster);
+        traversed++;
+    }
+
+    kfree(cluster_buf);
+    return bytes_written;
 }
 
 /*

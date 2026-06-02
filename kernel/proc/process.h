@@ -63,6 +63,8 @@ struct cpu_context {
 struct process {
     uint64_t pid;                   /* Process ID */
     process_state_t state;          /* Current state */
+    uint32_t uid;                   /* Effective user ID */
+    bool is_admin;                  /* Administrative privilege */
 
     uint64_t cpu_id;                /* CPU affinity (for future SMP) */
 
@@ -140,6 +142,8 @@ uint64_t process_count(void);
 /* Process file descriptor helpers */
 int process_fd_open(struct process *proc, struct vfs_node *node);
 int process_fd_read(struct process *proc, int fd, uint8_t *buffer, size_t size);
+int process_fd_write(struct process *proc, int fd, const uint8_t *buffer, size_t size);
 int process_fd_close(struct process *proc, int fd);
+void process_set_credentials(struct process *proc, uint32_t uid, bool is_admin);
 
 #endif /* _ASTRA_PROC_PROCESS_H */

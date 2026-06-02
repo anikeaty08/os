@@ -28,15 +28,18 @@
 #define VFS_MOUNTPOINT  0x08
 
 /*
- * Open flags (read-only filesystem, so only read flags)
+ * Open flags
  */
 #define VFS_O_RDONLY    0x00
+#define VFS_O_WRONLY    0x01
+#define VFS_O_RDWR      0x02
 
 /*
  * Permission bits
  */
 #define VFS_PERM_READ    0x01
 #define VFS_PERM_EXEC    0x02
+#define VFS_PERM_WRITE   0x04
 
 /*
  * Seek modes
@@ -52,9 +55,10 @@ struct vfs_node;
 struct dirent;
 
 /*
- * File operations (READ-ONLY - no write operations)
+ * File operations
  */
 typedef int (*read_fn)(struct vfs_node *node, uint64_t offset, size_t size, uint8_t *buffer);
+typedef int (*write_fn)(struct vfs_node *node, uint64_t offset, size_t size, const uint8_t *buffer);
 typedef struct dirent *(*readdir_fn)(struct vfs_node *node, uint32_t index);
 typedef struct vfs_node *(*finddir_fn)(struct vfs_node *node, const char *name);
 typedef int (*open_fn)(struct vfs_node *node);
@@ -75,6 +79,7 @@ struct vfs_node {
 
     /* File operations */
     read_fn read;
+    write_fn write;
     readdir_fn readdir;
     finddir_fn finddir;
     open_fn open;
@@ -124,11 +129,22 @@ void vfs_close(struct vfs_node *node);
 /* Read from file */
 int vfs_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t *buffer);
 
+/* Write to file */
+int vfs_write(struct vfs_node *node, uint64_t offset, size_t size, const uint8_t *buffer);
+
 /* Check read permission */
 bool vfs_can_read(struct vfs_node *node);
 
 /* Check execute/traverse permission */
 bool vfs_can_exec(struct vfs_node *node);
+
+/* Check write permission */
+bool vfs_can_write(struct vfs_node *node);
+
+/* UID-aware permission checks. Admin bypasses permission bits. */
+bool vfs_can_read_as(struct vfs_node *node, uint32_t uid, bool is_admin);
+bool vfs_can_write_as(struct vfs_node *node, uint32_t uid, bool is_admin);
+bool vfs_can_exec_as(struct vfs_node *node, uint32_t uid, bool is_admin);
 
 /* Read directory entry */
 struct dirent *vfs_readdir(struct vfs_node *node, uint32_t index);

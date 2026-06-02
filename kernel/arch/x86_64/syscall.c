@@ -51,12 +51,13 @@ void syscall_init(void) {
 }
 
 static int64_t sys_write(uint64_t fd, const char *buf, size_t len) {
-    if (fd != 1 && fd != 2) {
+    if (!user_range_valid((uint64_t)buf, len)) {
         return -1;
     }
 
-    if (!user_range_valid((uint64_t)buf, len)) {
-        return -1;
+    if (fd != 1 && fd != 2) {
+        struct process *current = process_current();
+        return process_fd_write(current, (int)fd, (const uint8_t *)buf, len);
     }
 
     for (size_t i = 0; i < len; i++) {
@@ -121,12 +122,14 @@ static int64_t sys_open(const char *path) {
     }
 
     struct vfs_node *node = vfs_open(kernel_path);
-    if (!node || vfs_is_directory(node) || !vfs_can_exec(node)) {
+    struct process *current = process_current();
+    if (!node || vfs_is_directory(node) ||
+        !vfs_can_read_as(node, current ? current->uid : 0,
+                         current ? current->is_admin : true)) {
         if (node) vfs_close(node);
         return -1;
     }
 
-    struct process *current = process_current();
     int fd = process_fd_open(current, node);
     if (fd < 0) {
         vfs_close(node);
@@ -149,7 +152,10 @@ static int64_t sys_spawn(const char *path) {
     }
 
     struct vfs_node *node = vfs_open(kernel_path);
-    if (!node || vfs_is_directory(node)) {
+    struct process *current = process_current();
+    if (!node || vfs_is_directory(node) ||
+        !vfs_can_exec_as(node, current ? current->uid : 0,
+                         current ? current->is_admin : true)) {
         if (node) vfs_close(node);
         return -1;
     }

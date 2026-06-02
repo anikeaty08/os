@@ -2,8 +2,8 @@
  * AstraOS - Virtual File System Implementation
  * Abstract filesystem interface (READ-ONLY)
  *
- * This VFS only supports READ operations.
- * No write, create, delete, or modify operations are implemented.
+ * This VFS supports read and bounded write operations when the mounted
+ * filesystem exposes them.
  */
 
 #include "vfs.h"
@@ -47,6 +47,20 @@ int vfs_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t *buffe
 
     if (node->read) {
         return node->read(node, offset, size, buffer);
+    }
+
+    return -1;
+}
+
+/*
+ * Write to file
+ */
+int vfs_write(struct vfs_node *node, uint64_t offset, size_t size, const uint8_t *buffer) {
+    if (!node || !buffer) return -1;
+    if (!vfs_can_write(node)) return -1;
+
+    if (node->write) {
+        return node->write(node, offset, size, buffer);
     }
 
     return -1;
@@ -123,6 +137,29 @@ bool vfs_can_read(struct vfs_node *node) {
 bool vfs_can_exec(struct vfs_node *node) {
     if (!node) return false;
     return (node->permissions & VFS_PERM_EXEC) != 0;
+}
+
+/*
+ * Check write permission
+ */
+bool vfs_can_write(struct vfs_node *node) {
+    if (!node) return false;
+    return (node->permissions & VFS_PERM_WRITE) != 0;
+}
+
+bool vfs_can_read_as(struct vfs_node *node, uint32_t uid, bool is_admin) {
+    (void)uid;
+    return is_admin || vfs_can_read(node);
+}
+
+bool vfs_can_write_as(struct vfs_node *node, uint32_t uid, bool is_admin) {
+    if (!node) return false;
+    return is_admin || (node->uid == uid && vfs_can_write(node));
+}
+
+bool vfs_can_exec_as(struct vfs_node *node, uint32_t uid, bool is_admin) {
+    (void)uid;
+    return is_admin || vfs_can_exec(node);
 }
 
 /*

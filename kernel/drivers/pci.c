@@ -313,7 +313,32 @@ static void pci_print_device(const struct pci_device *dev) {
     serial_puts("\n");
 }
 
-static void pci_probe_function(uint8_t bus, uint8_t device, uint8_t function, uint32_t *count) {
+static void pci_update_driver_gap_counters(const struct pci_device *dev,
+                                           uint32_t *ahci,
+                                           uint32_t *nvme,
+                                           uint32_t *usb,
+                                           uint32_t *network) {
+    if (!dev) return;
+
+    if (dev->class_code == 0x01 && dev->subclass == 0x06 && dev->prog_if == 0x01) {
+        (*ahci)++;
+    } else if (dev->class_code == 0x01 && dev->subclass == 0x08) {
+        (*nvme)++;
+    } else if (dev->class_code == 0x0C && dev->subclass == 0x03) {
+        (*usb)++;
+    } else if (dev->class_code == 0x02) {
+        (*network)++;
+    }
+}
+
+static void pci_probe_function_with_gaps(uint8_t bus,
+                                         uint8_t device,
+                                         uint8_t function,
+                                         uint32_t *count,
+                                         uint32_t *ahci,
+                                         uint32_t *nvme,
+                                         uint32_t *usb,
+                                         uint32_t *network) {
     uint16_t vendor_id = pci_config_read16(bus, device, function, 0x00);
     if (vendor_id == PCI_VENDOR_ID_NONE) {
         return;
@@ -332,25 +357,8 @@ static void pci_probe_function(uint8_t bus, uint8_t device, uint8_t function, ui
     dev.header_type = pci_config_read8(bus, device, function, 0x0E);
 
     pci_print_device(&dev);
+    pci_update_driver_gap_counters(&dev, ahci, nvme, usb, network);
     (*count)++;
-}
-
-static void pci_probe_device(uint8_t bus, uint8_t device, uint32_t *count) {
-    uint16_t vendor_id = pci_config_read16(bus, device, 0, 0x00);
-    if (vendor_id == PCI_VENDOR_ID_NONE) {
-        return;
-    }
-
-    pci_probe_function(bus, device, 0, count);
-
-    uint8_t header_type = pci_config_read8(bus, device, 0, 0x0E);
-    if ((header_type & PCI_HEADER_TYPE_MULTI_FUNCTION) == 0) {
-        return;
-    }
-
-    for (uint8_t function = 1; function < 8; function++) {
-        pci_probe_function(bus, device, function, count);
-    }
 }
 
 static void pci_print_dec(uint32_t value) {
@@ -374,16 +382,47 @@ static void pci_print_dec(uint32_t value) {
 
 void pci_init(void) {
     uint32_t count = 0;
+    uint32_t ahci_count = 0;
+    uint32_t nvme_count = 0;
+    uint32_t usb_count = 0;
+    uint32_t network_count = 0;
 
     serial_puts("PCI: Enumerating buses\n");
 
     for (uint16_t bus = 0; bus < 256; bus++) {
         for (uint8_t device = 0; device < 32; device++) {
-            pci_probe_device((uint8_t)bus, device, &count);
+            uint16_t vendor_id = pci_config_read16((uint8_t)bus, device, 0, 0x00);
+            if (vendor_id == PCI_VENDOR_ID_NONE) {
+                continue;
+            }
+
+            pci_probe_function_with_gaps((uint8_t)bus, device, 0, &count,
+                                         &ahci_count, &nvme_count,
+                                         &usb_count, &network_count);
+
+            uint8_t header_type = pci_config_read8((uint8_t)bus, device, 0, 0x0E);
+            if ((header_type & PCI_HEADER_TYPE_MULTI_FUNCTION) == 0) {
+                continue;
+            }
+
+            for (uint8_t function = 1; function < 8; function++) {
+                pci_probe_function_with_gaps((uint8_t)bus, device, function, &count,
+                                             &ahci_count, &nvme_count,
+                                             &usb_count, &network_count);
+            }
         }
     }
 
     serial_puts("PCI: Found ");
     pci_print_dec(count);
     serial_puts(" device(s)\n");
+    serial_puts("PCI: Driver gaps AHCI=");
+    pci_print_dec(ahci_count);
+    serial_puts(" NVMe=");
+    pci_print_dec(nvme_count);
+    serial_puts(" USB=");
+    pci_print_dec(usb_count);
+    serial_puts(" network=");
+    pci_print_dec(network_count);
+    serial_puts("\n");
 }

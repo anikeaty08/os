@@ -26,6 +26,7 @@ void cmd_version(int argc, char **argv);
 void cmd_test(int argc, char **argv);
 void cmd_ls(int argc, char **argv);
 void cmd_cat(int argc, char **argv);
+void cmd_write(int argc, char **argv);
 void cmd_run(int argc, char **argv);
 void cmd_ps(int argc, char **argv);
 void cmd_aniket(int argc, char **argv);

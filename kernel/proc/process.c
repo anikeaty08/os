@@ -37,6 +37,8 @@ void process_init(void) {
     struct process *idle = &process_table[0];
     idle->pid = 0;
     idle->state = PROCESS_RUNNING;
+    idle->uid = 0;
+    idle->is_admin = true;
     idle->cpu_id = 0;
     idle->page_table = vmm_get_kernel_pml4();
     idle->time_slice = DEFAULT_TIME_SLICE;
@@ -112,6 +114,8 @@ static struct process *process_create_user_space(const char *name,
 
     proc->pid = next_pid++;
     proc->state = PROCESS_CREATED;
+    proc->uid = current_process ? current_process->uid : 0;
+    proc->is_admin = current_process ? current_process->is_admin : true;
     proc->cpu_id = 0;
     proc->page_table = address_space;
     proc->kernel_stack = stack_top;
@@ -177,6 +181,8 @@ struct process *process_create(const char *name, void (*entry)(void)) {
     /* Initialize process */
     proc->pid = next_pid++;
     proc->state = PROCESS_CREATED;
+    proc->uid = current_process ? current_process->uid : 0;
+    proc->is_admin = current_process ? current_process->is_admin : true;
     proc->cpu_id = 0;
     proc->page_table = vmm_get_kernel_pml4();  /* Share kernel page table */
     proc->kernel_stack = stack_top;
@@ -700,8 +706,23 @@ int process_fd_read(struct process *proc, int fd, uint8_t *buffer, size_t size) 
     if (!proc || !buffer || size == 0) return -1;
     if (fd < 3 || fd >= PROCESS_MAX_FILES) return -1;
     if (!proc->files[fd].used || !proc->files[fd].node) return -1;
+    if (!vfs_can_read_as(proc->files[fd].node, proc->uid, proc->is_admin)) return -1;
 
     int bytes = vfs_read(proc->files[fd].node, proc->files[fd].offset, size, buffer);
+    if (bytes > 0) {
+        proc->files[fd].offset += (uint64_t)bytes;
+    }
+
+    return bytes;
+}
+
+int process_fd_write(struct process *proc, int fd, const uint8_t *buffer, size_t size) {
+    if (!proc || !buffer || size == 0) return -1;
+    if (fd < 3 || fd >= PROCESS_MAX_FILES) return -1;
+    if (!proc->files[fd].used || !proc->files[fd].node) return -1;
+    if (!vfs_can_write_as(proc->files[fd].node, proc->uid, proc->is_admin)) return -1;
+
+    int bytes = vfs_write(proc->files[fd].node, proc->files[fd].offset, size, buffer);
     if (bytes > 0) {
         proc->files[fd].offset += (uint64_t)bytes;
     }
@@ -722,4 +743,14 @@ int process_fd_close(struct process *proc, int fd) {
     proc->files[fd].offset = 0;
     proc->files[fd].used = false;
     return 0;
+}
+
+void process_set_credentials(struct process *proc, uint32_t uid, bool is_admin) {
+    if (!proc) return;
+
+    uint64_t flags;
+    spinlock_acquire_irqsave(&process_lock, &flags);
+    proc->uid = uid;
+    proc->is_admin = is_admin;
+    spinlock_release_irqrestore(&process_lock, flags);
 }

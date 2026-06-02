@@ -17,6 +17,7 @@
 #include "../proc/process.h"
 #include "../proc/scheduler.h"
 #include "../drivers/serial.h"
+#include "user.h"
 
 /* External framebuffer functions */
 extern void fb_clear(void);
@@ -45,6 +46,7 @@ void cmd_help(int argc, char **argv) {
     kprintf("  %sview%s      - View file with syntax highlighting\n", theme->accent2, ANSI_RESET);
     kprintf("  %sls%s        - List directory\n", theme->accent2, ANSI_RESET);
     kprintf("  %scat%s       - Display file\n", theme->accent2, ANSI_RESET);
+    kprintf("  %swrite%s     - Overwrite bytes in an existing file\n", theme->accent2, ANSI_RESET);
     kprintf("  %srun%s       - Run ELF64 or flat user binary\n", theme->accent2, ANSI_RESET);
     
     kprintf("\n%sCustomization:%s\n", theme->info, ANSI_RESET);
@@ -321,6 +323,55 @@ void cmd_cat(int argc, char **argv) {
 }
 
 /*
+ * write - Overwrite bytes in an existing file
+ */
+void cmd_write(int argc, char **argv) {
+    if (argc < 3) {
+        kprintf("Usage: write <filename> <text>\n");
+        return;
+    }
+
+    struct vfs_node *node = vfs_open(argv[1]);
+    if (!node) {
+        kprintf("write: %s: No such file or directory\n", argv[1]);
+        return;
+    }
+
+    if (vfs_is_directory(node)) {
+        kprintf("write: %s: Is a directory\n", argv[1]);
+        vfs_close(node);
+        return;
+    }
+
+    if (!vfs_can_write_as(node, user_get_current_uid(), user_is_admin())) {
+        kprintf("write: %s: Permission denied\n", argv[1]);
+        vfs_close(node);
+        return;
+    }
+
+    char buffer[512];
+    size_t out = 0;
+    for (int i = 2; i < argc && out < sizeof(buffer); i++) {
+        if (i > 2 && out < sizeof(buffer)) {
+            buffer[out++] = ' ';
+        }
+        for (size_t j = 0; argv[i][j] && out < sizeof(buffer); j++) {
+            buffer[out++] = argv[i][j];
+        }
+    }
+
+    int bytes = vfs_write(node, 0, out, (const uint8_t *)buffer);
+    vfs_close(node);
+
+    if (bytes < 0) {
+        kprintf("write: failed\n");
+        return;
+    }
+
+    kprintf("write: wrote %d byte(s)\n", bytes);
+}
+
+/*
  * run - Start a ring-3 user binary from the filesystem
  */
 void cmd_run(int argc, char **argv) {
@@ -389,6 +440,7 @@ void cmd_run(int argc, char **argv) {
         return;
     }
 
+    process_set_credentials(proc, user_get_current_uid(), user_is_admin());
     kprintf("Started user process %s as PID %llu\n", argv[1], proc->pid);
 }
 
