@@ -155,7 +155,7 @@ static void uint64_to_dec(uint64_t value, char *buf) {
 /*
  * Draw a pixel to the framebuffer
  */
-static void fb_putpixel(uint32_t x, uint32_t y, uint32_t color) {
+void fb_putpixel(uint32_t x, uint32_t y, uint32_t color) {
     if (!g_framebuffer) return;
     if (x >= g_framebuffer->width || y >= g_framebuffer->height) return;
 
@@ -235,6 +235,9 @@ static const uint8_t font_8x8[128][8] = {
     [','] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x30},
     ['-'] = {0x00, 0x00, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00},
     ['_'] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF},
+    ['='] = {0x00, 0x00, 0x7E, 0x00, 0x7E, 0x00, 0x00, 0x00},
+    ['|'] = {0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18},
+    ['?'] = {0x3C, 0x66, 0x06, 0x0C, 0x18, 0x00, 0x18, 0x00},
     ['('] = {0x0C, 0x18, 0x30, 0x30, 0x30, 0x18, 0x0C, 0x00},
     [')'] = {0x30, 0x18, 0x0C, 0x0C, 0x0C, 0x18, 0x30, 0x00},
     ['/'] = {0x06, 0x0C, 0x18, 0x30, 0x60, 0xC0, 0x80, 0x00},
@@ -258,6 +261,62 @@ static void fb_draw_char(char c, uint32_t x, uint32_t y, uint32_t fg, uint32_t b
             uint32_t color = (glyph[py] & (0x80 >> px)) ? fg : bg;
             fb_putpixel(x + px, y + py, color);
         }
+    }
+}
+
+void fb_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
+    if (!g_framebuffer || w == 0 || h == 0) {
+        return;
+    }
+
+    uint32_t max_x = x + w;
+    uint32_t max_y = y + h;
+    if (max_x > g_framebuffer->width || max_x < x) {
+        max_x = g_framebuffer->width;
+    }
+    if (max_y > g_framebuffer->height || max_y < y) {
+        max_y = g_framebuffer->height;
+    }
+
+    for (uint32_t py = y; py < max_y; py++) {
+        for (uint32_t px = x; px < max_x; px++) {
+            fb_putpixel(px, py, color);
+        }
+    }
+}
+
+void fb_draw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
+    if (!g_framebuffer || w == 0 || h == 0) {
+        return;
+    }
+
+    fb_fill_rect(x, y, w, 1, color);
+    fb_fill_rect(x, y + h - 1, w, 1, color);
+    fb_fill_rect(x, y, 1, h, color);
+    fb_fill_rect(x + w - 1, y, 1, h, color);
+}
+
+void fb_draw_text_px(uint32_t x, uint32_t y, const char *text, uint32_t fg, uint32_t bg) {
+    if (!g_framebuffer || !text) {
+        return;
+    }
+
+    uint32_t start_x = x;
+    for (size_t i = 0; text[i]; i++) {
+        char c = text[i];
+        if (c == '\n') {
+            x = start_x;
+            y += CHAR_HEIGHT;
+            continue;
+        }
+        if ((unsigned char)c >= 0x80) {
+            continue;
+        }
+        if (x + CHAR_WIDTH > g_framebuffer->width || y + CHAR_HEIGHT > g_framebuffer->height) {
+            break;
+        }
+        fb_draw_char(c, x, y, fg, bg);
+        x += CHAR_WIDTH;
     }
 }
 
@@ -368,6 +427,16 @@ uint32_t fb_get_height(void) {
     return g_framebuffer->height / CHAR_HEIGHT;
 }
 
+uint32_t fb_get_pixel_width(void) {
+    if (!g_framebuffer) return 640;
+    return g_framebuffer->width;
+}
+
+uint32_t fb_get_pixel_height(void) {
+    if (!g_framebuffer) return 480;
+    return g_framebuffer->height;
+}
+
 /*
  * Calculate X position to center text
  */
@@ -405,6 +474,10 @@ void fb_clear(void) {
            g_framebuffer->pitch * g_framebuffer->height);
     fb_cursor_x = 0;
     fb_cursor_y = 0;
+}
+
+void fb_put_at(uint32_t x, uint32_t y, const char *text) {
+    fb_draw_text_px(x * CHAR_WIDTH, y * CHAR_HEIGHT, text, FG_COLOR, BG_COLOR);
 }
 
 /*

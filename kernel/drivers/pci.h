@@ -54,10 +54,21 @@ struct pci_driver {
     void (*init)(void);
 };
 
+struct pci_probe_summary {
+    uint32_t devices;
+    uint32_t driver_count;
+    uint32_t ahci_matches;
+    uint32_t nvme_matches;
+    uint32_t usb_matches;
+    uint32_t net_matches;
+    uint32_t failures;
+};
+
 /*
  * pci_init - Enumerate PCI devices and print present devices to serial.
  */
 void pci_init(void);
+void pci_get_probe_summary(struct pci_probe_summary *summary);
 
 uint32_t pci_config_read32(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset);
 uint16_t pci_config_read16(uint8_t bus, uint8_t device, uint8_t function, uint8_t offset);

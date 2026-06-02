@@ -575,6 +575,8 @@ static const struct pci_driver *pci_builtin_drivers[] = {
 #define PCI_BUILTIN_DRIVER_COUNT \
     ((uint32_t)(sizeof(pci_builtin_drivers) / sizeof(pci_builtin_drivers[0])))
 
+static struct pci_probe_summary pci_last_summary;
+
 static void pci_init_builtin_drivers(void) {
     for (uint32_t i = 0; i < PCI_BUILTIN_DRIVER_COUNT; i++) {
         if (pci_builtin_drivers[i]->init) {
@@ -684,10 +686,19 @@ void pci_init(void) {
     pci_log_dec(count);
     serial_puts(" device(s)\n");
 
+    pci_last_summary.devices = count;
+    pci_last_summary.driver_count = PCI_BUILTIN_DRIVER_COUNT;
+    pci_last_summary.ahci_matches = 0;
+    pci_last_summary.nvme_matches = 0;
+    pci_last_summary.usb_matches = 0;
+    pci_last_summary.net_matches = 0;
+    pci_last_summary.failures = 0;
+
     serial_puts("PCI: Driver probe matches");
     for (uint32_t i = 0; i < PCI_BUILTIN_DRIVER_COUNT; i++) {
+        const struct pci_driver *driver = stats[i].driver;
         serial_putchar(' ');
-        serial_puts(stats[i].driver->name);
+        serial_puts(driver->name);
         serial_putchar('=');
         pci_log_dec(stats[i].matches);
         if (stats[i].failures != 0) {
@@ -695,6 +706,26 @@ void pci_init(void) {
             pci_log_dec(stats[i].failures);
             serial_putchar(')');
         }
+        pci_last_summary.failures += stats[i].failures;
+        if (driver == &ahci_pci_driver) {
+            pci_last_summary.ahci_matches = stats[i].matches;
+        } else if (driver == &nvme_pci_driver) {
+            pci_last_summary.nvme_matches = stats[i].matches;
+        } else if (driver == &net_pci_driver) {
+            pci_last_summary.net_matches = stats[i].matches;
+        } else if (driver == &uhci_pci_driver ||
+                   driver == &ohci_pci_driver ||
+                   driver == &ehci_pci_driver ||
+                   driver == &xhci_pci_driver) {
+            pci_last_summary.usb_matches += stats[i].matches;
+        }
     }
     serial_puts("\n");
+}
+
+void pci_get_probe_summary(struct pci_probe_summary *summary) {
+    if (!summary) {
+        return;
+    }
+    *summary = pci_last_summary;
 }

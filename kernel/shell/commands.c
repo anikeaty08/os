@@ -17,6 +17,7 @@
 #include "../proc/process.h"
 #include "../proc/scheduler.h"
 #include "../drivers/serial.h"
+#include "../gui/gui.h"
 #include "user.h"
 
 /* External framebuffer functions */
@@ -65,6 +66,7 @@ void cmd_help(int argc, char **argv) {
     kprintf("%s=======================================%s\n", theme->accent1, ANSI_RESET);
     
     kprintf("\n%sSystem:%s\n", theme->info, ANSI_RESET);
+    kprintf("  %sgui%s       - Launch framebuffer desktop\n", theme->accent2, ANSI_RESET);
     kprintf("  %sstatus%s    - Live system dashboard\n", theme->accent2, ANSI_RESET);
     kprintf("  %sinfo%s      - System information\n", theme->accent2, ANSI_RESET);
     kprintf("  %smem%s       - Memory usage\n", theme->accent2, ANSI_RESET);
@@ -361,6 +363,12 @@ void cmd_cat(int argc, char **argv) {
     kprintf("\n");
 
     vfs_close(node);
+}
+
+void cmd_gui(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+    gui_run();
 }
 
 void cmd_touch(int argc, char **argv) {
