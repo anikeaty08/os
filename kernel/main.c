@@ -653,6 +653,8 @@ void kmain(void) {
         serial_puts("ACPI: Not available\n");
         fb_puts("ACPI not available (using fallback shutdown)\n");
     }
+    serial_puts("Checking SMP readiness...\n");
+    smp_log_readiness();
 
     /* Enumerate PCI devices */
     serial_puts("Initializing PCI...\n");

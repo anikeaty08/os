@@ -86,6 +86,40 @@ struct acpi_fadt {
     /* More fields in ACPI 2.0+ but we don't need them */
 } __attribute__((packed));
 
+#define ACPI_MADT_TYPE_LOCAL_APIC       0
+#define ACPI_MADT_TYPE_LOCAL_X2APIC     9
+#define ACPI_MADT_LAPIC_ENABLED         (1U << 0)
+#define ACPI_MADT_LAPIC_ONLINE_CAPABLE  (1U << 3)
+
+/*
+ * MADT (Multiple APIC Description Table)
+ */
+struct acpi_madt {
+    struct acpi_sdt_header header;
+    uint32_t local_apic_address;
+    uint32_t flags;
+} __attribute__((packed));
+
+struct acpi_madt_entry_header {
+    uint8_t type;
+    uint8_t length;
+} __attribute__((packed));
+
+struct acpi_madt_local_apic {
+    struct acpi_madt_entry_header header;
+    uint8_t acpi_processor_id;
+    uint8_t apic_id;
+    uint32_t flags;
+} __attribute__((packed));
+
+struct acpi_madt_local_x2apic {
+    struct acpi_madt_entry_header header;
+    uint16_t reserved;
+    uint32_t x2apic_id;
+    uint32_t flags;
+    uint32_t acpi_uid;
+} __attribute__((packed));
+
 /*
  * Initialize ACPI subsystem
  * @param rsdp_ptr: Pointer to RSDP from bootloader (or NULL to search)
@@ -93,6 +127,14 @@ struct acpi_fadt {
  * Returns true if ACPI is available
  */
 bool acpi_init(void *rsdp_ptr, uint64_t hhdm);
+
+/*
+ * MADT topology helpers.
+ */
+bool acpi_madt_available(void);
+uint32_t acpi_madt_lapic_address(void);
+uint32_t acpi_madt_flags(void);
+uint32_t acpi_madt_cpu_entry_count(void);
 
 /*
  * Power off the system using ACPI

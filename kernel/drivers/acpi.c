@@ -6,6 +6,7 @@
 #include "acpi.h"
 #include "../arch/x86_64/io.h"
 #include "../arch/x86_64/cpu.h"
+#include "../arch/x86_64/apic.h"
 #include "../lib/string.h"
 #include "../lib/stdio.h"
 #include "../mm/vmm.h"
@@ -16,10 +17,14 @@
  */
 static bool acpi_available = false;
 static struct acpi_fadt *fadt = NULL;
+static struct acpi_madt *madt = NULL;
 static uint16_t slp_typa = 0;
 static uint16_t slp_typb = 0;
 static uint16_t pm1a_cnt = 0;
 static uint16_t pm1b_cnt = 0;
+static uint32_t madt_lapic_address = 0;
+static uint32_t madt_flags = 0;
+static uint32_t madt_cpu_entries = 0;
 
 /*
  * Local HHDM offset for ACPI subsystem
@@ -154,6 +159,108 @@ static void *acpi_find_table(struct acpi_rsdp *rsdp, const char *signature) {
 }
 
 /*
+ * Parse MADT processor LAPIC entries and publish SMP topology.
+ */
+static bool acpi_parse_madt(struct acpi_madt *madt_ptr) {
+    smp_topology_reset();
+    madt = NULL;
+    madt_lapic_address = 0;
+    madt_flags = 0;
+    madt_cpu_entries = 0;
+
+    if (!madt_ptr) {
+        kprintf("ACPI: MADT not found; SMP topology unavailable\n");
+        return false;
+    }
+
+    if (madt_ptr->header.length < sizeof(struct acpi_madt)) {
+        kprintf("ACPI: MADT too short (%u bytes)\n", madt_ptr->header.length);
+        return false;
+    }
+
+    if (!acpi_checksum_valid(madt_ptr, madt_ptr->header.length)) {
+        kprintf("ACPI: MADT checksum invalid; ignoring CPU topology\n");
+        return false;
+    }
+
+    madt = madt_ptr;
+    madt_lapic_address = madt_ptr->local_apic_address;
+    madt_flags = madt_ptr->flags;
+
+    kprintf("ACPI: MADT found, LAPIC address=0x%x, flags=0x%x\n",
+            madt_lapic_address,
+            madt_flags);
+
+    uint8_t *ptr = (uint8_t *)madt_ptr + sizeof(struct acpi_madt);
+    uint8_t *end = (uint8_t *)madt_ptr + madt_ptr->header.length;
+
+    while (ptr + sizeof(struct acpi_madt_entry_header) <= end) {
+        struct acpi_madt_entry_header *entry =
+            (struct acpi_madt_entry_header *)ptr;
+
+        if (entry->length < sizeof(struct acpi_madt_entry_header) ||
+            ptr + entry->length > end) {
+            kprintf("ACPI: MADT malformed entry type=%u length=%u\n",
+                    entry->type,
+                    entry->length);
+            break;
+        }
+
+        if (entry->type == ACPI_MADT_TYPE_LOCAL_APIC &&
+            entry->length >= sizeof(struct acpi_madt_local_apic)) {
+            struct acpi_madt_local_apic *lapic =
+                (struct acpi_madt_local_apic *)ptr;
+            bool enabled =
+                (lapic->flags & ACPI_MADT_LAPIC_ENABLED) != 0;
+            bool online_capable =
+                (lapic->flags & ACPI_MADT_LAPIC_ONLINE_CAPABLE) != 0;
+            bool stored = smp_register_lapic_cpu(lapic->acpi_processor_id,
+                                                 lapic->apic_id,
+                                                 enabled,
+                                                 online_capable);
+
+            madt_cpu_entries++;
+            kprintf("ACPI: MADT LAPIC CPU ACPI ID=%u APIC ID=%u flags=0x%x enabled=%s online-capable=%s%s\n",
+                    lapic->acpi_processor_id,
+                    lapic->apic_id,
+                    lapic->flags,
+                    enabled ? "yes" : "no",
+                    online_capable ? "yes" : "no",
+                    stored ? "" : " (topology full)");
+        } else if (entry->type == ACPI_MADT_TYPE_LOCAL_X2APIC &&
+                   entry->length >= sizeof(struct acpi_madt_local_x2apic)) {
+            struct acpi_madt_local_x2apic *x2apic =
+                (struct acpi_madt_local_x2apic *)ptr;
+            bool enabled =
+                (x2apic->flags & ACPI_MADT_LAPIC_ENABLED) != 0;
+            bool online_capable =
+                (x2apic->flags & ACPI_MADT_LAPIC_ONLINE_CAPABLE) != 0;
+            bool stored = smp_register_lapic_cpu(x2apic->acpi_uid,
+                                                 x2apic->x2apic_id,
+                                                 enabled,
+                                                 online_capable);
+
+            madt_cpu_entries++;
+            kprintf("ACPI: MADT x2APIC CPU ACPI UID=%u x2APIC ID=%u flags=0x%x enabled=%s online-capable=%s%s\n",
+                    x2apic->acpi_uid,
+                    x2apic->x2apic_id,
+                    x2apic->flags,
+                    enabled ? "yes" : "no",
+                    online_capable ? "yes" : "no",
+                    stored ? "" : " (topology full)");
+        }
+
+        ptr += entry->length;
+    }
+
+    kprintf("ACPI: MADT CPU entries discovered=%u, topology entries stored=%u\n",
+            madt_cpu_entries,
+            smp_cpu_count());
+
+    return madt_cpu_entries > 0;
+}
+
+/*
  * Parse DSDT to find S5 sleep type values
  * This is a simplified parser - real ACPI requires AML interpretation
  */
@@ -255,6 +362,9 @@ bool acpi_init(void *rsdp_ptr, uint64_t hhdm) {
 
     kprintf("ACPI: Found RSDP (revision %d)\n", rsdp->revision);
 
+    /* Find and parse MADT for SMP CPU topology */
+    acpi_parse_madt((struct acpi_madt *)acpi_find_table(rsdp, "APIC"));
+
     /* Find FADT */
     fadt = acpi_find_table(rsdp, "FACP");
     if (!fadt) {
@@ -277,6 +387,22 @@ bool acpi_init(void *rsdp_ptr, uint64_t hhdm) {
 
     acpi_available = true;
     return true;
+}
+
+bool acpi_madt_available(void) {
+    return madt != NULL;
+}
+
+uint32_t acpi_madt_lapic_address(void) {
+    return madt_lapic_address;
+}
+
+uint32_t acpi_madt_flags(void) {
+    return madt_flags;
+}
+
+uint32_t acpi_madt_cpu_entry_count(void) {
+    return madt_cpu_entries;
 }
 
 /*
