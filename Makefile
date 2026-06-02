@@ -151,7 +151,7 @@ run-gdb: iso disk
 	@echo "QEMU started. Connect with: gdb iso/kernel.elf -ex 'target remote :1234'"
 
 smoke:
-	./scripts/smoke.sh
+	sh ./scripts/smoke.sh
 
 # Clean build artifacts
 clean:

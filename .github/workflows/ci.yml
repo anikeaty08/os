@@ -27,4 +27,4 @@ jobs:
         run: make disk
 
       - name: Smoke test
-        run: scripts/smoke.sh
+        run: sh scripts/smoke.sh
