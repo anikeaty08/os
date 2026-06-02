@@ -33,6 +33,12 @@
 #define VFS_O_RDONLY    0x00
 
 /*
+ * Permission bits
+ */
+#define VFS_PERM_READ    0x01
+#define VFS_PERM_EXEC    0x02
+
+/*
  * Seek modes
  */
 #define VFS_SEEK_SET    0
@@ -60,7 +66,7 @@ typedef int (*close_fn)(struct vfs_node *node);
 struct vfs_node {
     char name[VFS_MAX_NAME];    /* File/directory name */
     uint32_t flags;             /* Node type flags */
-    uint32_t permissions;       /* Permission mask (unused for now) */
+    uint32_t permissions;       /* Permission mask */
     uint32_t uid;               /* Owner user ID */
     uint32_t gid;               /* Owner group ID */
     uint64_t size;              /* File size in bytes */
@@ -117,6 +123,12 @@ void vfs_close(struct vfs_node *node);
 
 /* Read from file */
 int vfs_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t *buffer);
+
+/* Check read permission */
+bool vfs_can_read(struct vfs_node *node);
+
+/* Check execute/traverse permission */
+bool vfs_can_exec(struct vfs_node *node);
 
 /* Read directory entry */
 struct dirent *vfs_readdir(struct vfs_node *node, uint32_t index);

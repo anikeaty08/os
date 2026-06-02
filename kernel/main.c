@@ -15,6 +15,7 @@
 #include "drivers/pit.h"
 #include "drivers/keyboard.h"
 #include "arch/x86_64/cpu.h"
+#include "arch/x86_64/apic.h"
 #include "arch/x86_64/gdt.h"
 #include "arch/x86_64/idt.h"
 #include "arch/x86_64/irq.h"
@@ -24,6 +25,7 @@
 #include "mm/heap.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "drivers/pci.h"
 #include "drivers/ata.h"
 #include "drivers/acpi.h"
 #include "fs/vfs.h"
@@ -512,6 +514,9 @@ void kmain(void) {
     serial_puts("OK\n");
     fb_puts("GDT initialized\n");
 
+    /* Probe APIC capability but keep PIC IRQ routing for now */
+    apic_init();
+
     /* Initialize IRQ subsystem (PIC) */
     serial_puts("Initializing IRQ (PIC)... ");
     irq_init();
@@ -649,6 +654,12 @@ void kmain(void) {
         fb_puts("ACPI not available (using fallback shutdown)\n");
     }
 
+    /* Enumerate PCI devices */
+    serial_puts("Initializing PCI...\n");
+    pci_init();
+    serial_puts("PCI enumeration complete\n");
+    fb_puts("PCI devices enumerated\n");
+
     /* Initialize ATA/Disk */
     serial_puts("Initializing ATA... ");
     ata_init();
@@ -698,6 +709,7 @@ void kmain(void) {
     serial_puts("  AstraOS Kernel Initialized!\n");
     serial_puts("  All subsystems operational.\n");
     serial_puts("========================================\n");
+    serial_puts("ASTRAOS_SMOKE_READY\n");
 
     fb_puts("\nAll systems initialized successfully!\n");
     fb_puts("Starting shell...\n");

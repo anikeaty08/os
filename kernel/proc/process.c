@@ -119,6 +119,7 @@ static struct process *process_create_user_space(const char *name,
     proc->user_stack = user_stack;
     proc->time_slice = DEFAULT_TIME_SLICE;
     proc->exit_code = 0;
+    proc->wait_observed = false;
     proc->next = NULL;
     proc->parent = current_process;
     memset(proc->files, 0, sizeof(proc->files));
@@ -183,6 +184,7 @@ struct process *process_create(const char *name, void (*entry)(void)) {
     proc->user_stack = 0;
     proc->time_slice = DEFAULT_TIME_SLICE;
     proc->exit_code = 0;
+    proc->wait_observed = false;
     proc->next = NULL;
     proc->parent = current_process;
     memset(proc->files, 0, sizeof(proc->files));
@@ -468,7 +470,14 @@ void process_exit(int exit_code) {
     spinlock_acquire_irqsave(&process_lock, &flags);
 
     if (current_process && current_process->pid != 0) {
+        for (int i = 1; i < MAX_PROCESSES; i++) {
+            if (process_table[i].parent == current_process) {
+                process_table[i].parent = NULL;
+            }
+        }
+
         current_process->exit_code = exit_code;
+        current_process->wait_observed = false;
         current_process->state = PROCESS_ZOMBIE;
     }
 
@@ -481,6 +490,61 @@ void process_exit(int exit_code) {
     for (;;) {
         __asm__ volatile ("hlt");
     }
+}
+
+int process_kill(uint64_t pid) {
+    if (pid == 0) {
+        return -1;
+    }
+
+    struct process *current = process_current();
+    if (current && current->pid == pid) {
+        process_exit(-1);
+    }
+
+    uint64_t flags;
+    spinlock_acquire_irqsave(&process_lock, &flags);
+
+    struct process *proc = process_get(pid);
+    if (!proc || proc->state == PROCESS_UNUSED) {
+        spinlock_release_irqrestore(&process_lock, flags);
+        return -1;
+    }
+
+    if (proc->state != PROCESS_ZOMBIE) {
+        proc->exit_code = -1;
+        proc->wait_observed = false;
+        proc->state = PROCESS_ZOMBIE;
+        scheduler_remove(proc);
+    }
+
+    spinlock_release_irqrestore(&process_lock, flags);
+    return 0;
+}
+
+int process_wait(uint64_t pid, int *status) {
+    struct process *current = process_current();
+    if (!current || pid == 0) {
+        return -1;
+    }
+
+    uint64_t flags;
+    spinlock_acquire_irqsave(&process_lock, &flags);
+
+    struct process *proc = process_get(pid);
+    if (!proc || proc->parent != current || proc->state != PROCESS_ZOMBIE) {
+        spinlock_release_irqrestore(&process_lock, flags);
+        return -1;
+    }
+
+    if (status) {
+        *status = proc->exit_code;
+    }
+    proc->wait_observed = true;
+    proc->parent = NULL;
+
+    spinlock_release_irqrestore(&process_lock, flags);
+    return 0;
 }
 
 /*
@@ -496,6 +560,10 @@ void process_reap_zombies(void) {
         struct process *proc = &process_table[i];
 
         if (proc->state != PROCESS_ZOMBIE || proc == current) {
+            continue;
+        }
+
+        if (proc->parent && !proc->wait_observed) {
             continue;
         }
 

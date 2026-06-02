@@ -80,6 +80,7 @@ struct process {
     char name[32];                  /* Process name */
 
     int exit_code;                  /* Exit status */
+    bool wait_observed;             /* Parent has collected exit status */
 
     struct process *next;           /* Next in ready/wait queue */
     struct process *parent;         /* Parent process */
@@ -105,6 +106,12 @@ struct process *process_create_elf(const char *name, const void *image, size_t s
 
 /* Exit current process */
 void process_exit(int exit_code);
+
+/* Terminate a process by PID without signals */
+int process_kill(uint64_t pid);
+
+/* Collect exit status for a zombie child */
+int process_wait(uint64_t pid, int *status);
 
 /* Reap zombie processes whose stacks are no longer active */
 void process_reap_zombies(void);

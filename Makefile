@@ -49,13 +49,13 @@ KERNEL := iso/kernel.elf
 ISO := astraos.iso
 DISK := disk.img
 USER_BUILD := build/user
-USER_PROGRAMS := sh hello
+USER_PROGRAMS := sh hello pkg
 USER_BINS := $(addprefix $(USER_BUILD)/,$(USER_PROGRAMS))
 
 # Limine bootloader path (adjust after cloning)
 LIMINE_DIR := limine
 
-.PHONY: all clean run run-debug iso limine disk userspace
+.PHONY: all clean run run-debug run-gdb iso limine disk userspace smoke
 
 all: $(KERNEL) userspace
 
@@ -115,6 +115,7 @@ disk: userspace
 	mkfs.fat -F 16 $(DISK)
 	mcopy -i $(DISK) $(USER_BUILD)/sh ::/SH
 	mcopy -i $(DISK) $(USER_BUILD)/hello ::/HELLO
+	mcopy -i $(DISK) $(USER_BUILD)/pkg ::/PKG
 
 # Run in QEMU
 run: iso disk
@@ -149,10 +150,14 @@ run-gdb: iso disk
 		-no-shutdown &
 	@echo "QEMU started. Connect with: gdb iso/kernel.elf -ex 'target remote :1234'"
 
+smoke:
+	./scripts/smoke.sh
+
 # Clean build artifacts
 clean:
 	rm -f $(OBJECTS) $(KERNEL) $(ISO) $(DISK)
 	rm -rf iso/*.sys iso/*.bin iso/*.conf iso/*.elf iso/EFI
+	rm -rf smoke-logs
 	rm -rf build
 
 # Deep clean (including Limine)
@@ -171,6 +176,7 @@ help:
 	@echo "  run        - Run in QEMU"
 	@echo "  run-debug  - Run with interrupt debugging"
 	@echo "  run-gdb    - Run with GDB support"
+	@echo "  smoke      - Build and run headless QEMU smoke test"
 	@echo "  clean      - Remove build artifacts"
 	@echo "  distclean  - Remove everything including Limine"
 	@echo "  help       - Show this help"

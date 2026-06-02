@@ -43,6 +43,7 @@ struct vfs_node *vfs_get_root(void) {
  */
 int vfs_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t *buffer) {
     if (!node || !buffer) return -1;
+    if (!vfs_can_read(node)) return -1;
 
     if (node->read) {
         return node->read(node, offset, size, buffer);
@@ -56,6 +57,7 @@ int vfs_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t *buffe
  */
 struct dirent *vfs_readdir(struct vfs_node *node, uint32_t index) {
     if (!node) return NULL;
+    if (!vfs_can_read(node)) return NULL;
 
     /* Check if it's a directory */
     if (!(node->flags & VFS_DIRECTORY)) {
@@ -74,6 +76,7 @@ struct dirent *vfs_readdir(struct vfs_node *node, uint32_t index) {
  */
 struct vfs_node *vfs_finddir(struct vfs_node *node, const char *name) {
     if (!node || !name) return NULL;
+    if (!vfs_can_exec(node)) return NULL;
 
     /* Check if it's a directory */
     if (!(node->flags & VFS_DIRECTORY)) {
@@ -93,6 +96,10 @@ struct vfs_node *vfs_finddir(struct vfs_node *node, const char *name) {
 struct vfs_node *vfs_open(const char *path) {
     struct vfs_node *node = vfs_resolve_path(path);
 
+    if (node && !vfs_can_read(node)) {
+        return NULL;
+    }
+
     if (node && node->open) {
         if (node->open(node) != 0) {
             return NULL;
@@ -100,6 +107,22 @@ struct vfs_node *vfs_open(const char *path) {
     }
 
     return node;
+}
+
+/*
+ * Check read permission
+ */
+bool vfs_can_read(struct vfs_node *node) {
+    if (!node) return false;
+    return (node->permissions & VFS_PERM_READ) != 0;
+}
+
+/*
+ * Check execute/traverse permission
+ */
+bool vfs_can_exec(struct vfs_node *node) {
+    if (!node) return false;
+    return (node->permissions & VFS_PERM_EXEC) != 0;
 }
 
 /*

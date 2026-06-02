@@ -27,6 +27,51 @@ static void puts(const char *s) {
     sys_write(1, s, strlen(s));
 }
 
+static int parse_pid(const char *s, long *pid) {
+    long value = 0;
+
+    if (!s || !*s) {
+        return -1;
+    }
+
+    while (*s) {
+        if (*s < '0' || *s > '9') {
+            return -1;
+        }
+        value = value * 10 + (*s - '0');
+        s++;
+    }
+
+    *pid = value;
+    return 0;
+}
+
+static void print_long(long value) {
+    char buf[32];
+    int out = 0;
+
+    if (value < 0) {
+        buf[out++] = '-';
+        value = -value;
+    }
+
+    char tmp[24];
+    int pos = 0;
+    while (value > 0 && pos < (int)sizeof(tmp)) {
+        tmp[pos++] = (char)('0' + (value % 10));
+        value /= 10;
+    }
+
+    if (pos == 0) {
+        buf[out++] = '0';
+    }
+    while (pos > 0) {
+        buf[out++] = tmp[--pos];
+    }
+
+    sys_write(1, buf, (size_t)out);
+}
+
 static void trim_newline(char *s) {
     for (size_t i = 0; s[i]; i++) {
         if (s[i] == '\n' || s[i] == '\r') {
@@ -58,6 +103,45 @@ static void print_pid(void) {
     }
     buf[out++] = '\n';
     sys_write(1, buf, (size_t)out);
+}
+
+static void kill_pid(const char *arg) {
+    long pid;
+
+    if (parse_pid(arg, &pid) < 0 || pid <= 0) {
+        puts("kill: invalid pid\n");
+        return;
+    }
+
+    if (sys_kill(pid) < 0) {
+        puts("kill: failed\n");
+        return;
+    }
+
+    puts("killed pid ");
+    print_long(pid);
+    puts("\n");
+}
+
+static void wait_pid(const char *arg) {
+    long pid;
+    int status = 0;
+
+    if (parse_pid(arg, &pid) < 0 || pid <= 0) {
+        puts("wait: invalid pid\n");
+        return;
+    }
+
+    if (sys_wait(pid, &status) < 0) {
+        puts("wait: no zombie child\n");
+        return;
+    }
+
+    puts("pid ");
+    print_long(pid);
+    puts(" exited ");
+    print_long(status);
+    puts("\n");
 }
 
 static void cat_file(const char *path) {
@@ -132,7 +216,7 @@ int main(void) {
         trim_newline(line);
 
         if (strcmp(line, "help") == 0) {
-            puts("commands: help pid echo cat run exit yield\n");
+            puts("commands: help pid echo cat run kill wait exit yield\n");
         } else if (strcmp(line, "pid") == 0) {
             print_pid();
         } else if (strcmp(line, "yield") == 0) {
@@ -143,6 +227,10 @@ int main(void) {
             cat_file(line + 4);
         } else if (starts_with(line, "run ")) {
             run_program(line + 4);
+        } else if (starts_with(line, "kill ")) {
+            kill_pid(line + 5);
+        } else if (starts_with(line, "wait ")) {
+            wait_pid(line + 5);
         } else if (strcmp(line, "exit") == 0) {
             puts("leaving user shell\n");
             return 0;

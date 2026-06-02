@@ -7,6 +7,17 @@
 #define _ASTRA_PANIC_H
 
 #include <stdint.h>
+#include <stddef.h>
+
+/*
+ * crash_log_write - Append a message to the in-memory crash log
+ */
+void crash_log_write(const char *message);
+
+/*
+ * crash_log_dump - Dump the in-memory crash log to serial
+ */
+void crash_log_dump(void);
 
 /*
  * panic - Halt system with error message

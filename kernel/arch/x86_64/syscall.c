@@ -121,7 +121,7 @@ static int64_t sys_open(const char *path) {
     }
 
     struct vfs_node *node = vfs_open(kernel_path);
-    if (!node || vfs_is_directory(node)) {
+    if (!node || vfs_is_directory(node) || !vfs_can_exec(node)) {
         if (node) vfs_close(node);
         return -1;
     }
@@ -195,6 +195,14 @@ static int64_t sys_spawn(const char *path) {
     return (int64_t)child->pid;
 }
 
+static int64_t sys_wait(uint64_t pid, int *status) {
+    if (status && !user_range_writable((uint64_t)status, sizeof(*status))) {
+        return -1;
+    }
+
+    return process_wait(pid, status);
+}
+
 void syscall_handler(struct interrupt_frame *frame) {
     if (!frame) return;
 
@@ -238,6 +246,14 @@ void syscall_handler(struct interrupt_frame *frame) {
 
         case SYS_SPAWN:
             result = sys_spawn((const char *)frame->rdi);
+            break;
+
+        case SYS_KILL:
+            result = process_kill(frame->rdi);
+            break;
+
+        case SYS_WAIT:
+            result = sys_wait(frame->rdi, (int *)frame->rsi);
             break;
 
         default:

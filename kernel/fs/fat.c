@@ -260,8 +260,10 @@ static struct vfs_node *fat_create_node(const struct fat16_dir_entry *entry) {
 
     if (entry->attributes & FAT_ATTR_DIRECTORY) {
         node->flags = VFS_DIRECTORY;
+        node->permissions = VFS_PERM_READ | VFS_PERM_EXEC;
     } else {
         node->flags = VFS_FILE;
+        node->permissions = VFS_PERM_READ | VFS_PERM_EXEC;
     }
 
     node->size = entry->file_size;
@@ -646,6 +648,7 @@ struct vfs_node *fat16_init(int drive, uint32_t partition_lba) {
 
     strcpy(root->name, "/");
     root->flags = VFS_DIRECTORY;
+    root->permissions = VFS_PERM_READ | VFS_PERM_EXEC;
     root->impl = 0;  /* Root directory has no cluster */
     root->read = fat_read;
     root->readdir = fat_readdir;

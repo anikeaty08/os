@@ -12,6 +12,8 @@
 #define SYS_OPEN   5
 #define SYS_CLOSE  6
 #define SYS_SPAWN  7
+#define SYS_KILL   8
+#define SYS_WAIT   9
 
 static inline long syscall3(long number, long a0, long a1, long a2) {
     long ret;
@@ -38,6 +40,14 @@ static inline long sys_close(int fd) {
 
 static inline long sys_spawn(const char *path) {
     return syscall3(SYS_SPAWN, (long)path, 0, 0);
+}
+
+static inline long sys_kill(long pid) {
+    return syscall3(SYS_KILL, pid, 0, 0);
+}
+
+static inline long sys_wait(long pid, int *status) {
+    return syscall3(SYS_WAIT, pid, (long)status, 0);
 }
 
 static inline long sys_write(int fd, const void *buf, size_t len) {
