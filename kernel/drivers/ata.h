@@ -1,6 +1,6 @@
 /*
  * AstraOS - ATA Disk Driver Header
- * PIO mode ATA driver (READ-ONLY)
+ * PIO mode ATA driver
  */
 
 #ifndef _ASTRA_DRIVERS_ATA_H
@@ -59,7 +59,7 @@
  */
 #define ATA_CMD_READ_PIO        0x20
 #define ATA_CMD_READ_PIO_EXT    0x24
-#define ATA_CMD_WRITE_PIO       0x30        /* NOT USED - read only */
+#define ATA_CMD_WRITE_PIO       0x30
 #define ATA_CMD_IDENTIFY        0xEC
 #define ATA_CMD_CACHE_FLUSH     0xE7
 
@@ -98,7 +98,7 @@ void ata_init(void);
 bool ata_drive_present(int drive);
 
 /*
- * Read sectors from disk (READ-ONLY operation)
+ * Read sectors from disk
  *
  * drive: 0 = primary master, 1 = primary slave,
  *        2 = secondary master, 3 = secondary slave
@@ -109,6 +109,19 @@ bool ata_drive_present(int drive);
  * Returns: Number of sectors read, or -1 on error
  */
 int ata_read(int drive, uint64_t lba, uint32_t count, void *buffer);
+
+/*
+ * Write sectors to disk using raw ATA PIO LBA28 only.
+ *
+ * drive: 0 = primary master, 1 = primary slave,
+ *        2 = secondary master, 3 = secondary slave
+ * lba: Logical Block Address (sector number)
+ * count: Number of sectors to write
+ * buffer: Source buffer (must be count * 512 bytes)
+ *
+ * Returns: Number of sectors written, or -1 on error
+ */
+int ata_write(int drive, uint64_t lba, uint32_t count, const void *buffer);
 
 /*
  * Get drive information

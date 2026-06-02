@@ -1,10 +1,9 @@
 /*
  * AstraOS - ATA Disk Driver Implementation
- * PIO mode ATA driver (READ-ONLY)
+ * PIO mode ATA driver
  *
- * This driver only supports READ operations.
- * Write functions are intentionally not implemented to prevent
- * accidental data corruption.
+ * The filesystem layer remains read-only. Write support here is limited
+ * to conservative raw-sector ATA PIO groundwork.
  */
 
 #include "ata.h"
@@ -272,6 +271,61 @@ static int ata_read_lba28(struct ata_drive *drive, uint32_t lba, uint32_t count,
 }
 
 /*
+ * Write sectors using LBA28
+ */
+static int ata_write_lba28(struct ata_drive *drive, uint32_t lba, uint32_t count, const void *buffer) {
+    uint16_t base_port = drive->base_port;
+    const uint8_t *buf = (const uint8_t *)buffer;
+
+    for (uint32_t i = 0; i < count; i++) {
+        /* Select drive and set LBA mode + upper 4 bits of LBA */
+        uint8_t drive_sel = drive->is_master ? 0xE0 : 0xF0;
+        drive_sel |= ((lba + i) >> 24) & 0x0F;
+        outb(base_port + 6, drive_sel);
+
+        /* Wait for drive ready */
+        if (!ata_wait_ready(base_port)) {
+            return -1;
+        }
+
+        /* Set sector count */
+        outb(base_port + 2, 1);
+
+        /* Set LBA */
+        outb(base_port + 3, (lba + i) & 0xFF);
+        outb(base_port + 4, ((lba + i) >> 8) & 0xFF);
+        outb(base_port + 5, ((lba + i) >> 16) & 0xFF);
+
+        /* Send WRITE command */
+        outb(base_port + 7, ATA_CMD_WRITE_PIO);
+
+        /* Wait for drive to request data */
+        if (!ata_wait_drq(base_port)) {
+            return -1;
+        }
+
+        /* Write sector data */
+        const uint16_t *wbuf = (const uint16_t *)(buf + i * ATA_SECTOR_SIZE);
+        for (int j = 0; j < 256; j++) {
+            outw(base_port, wbuf[j]);
+        }
+
+        /* Wait for the sector transfer to complete */
+        if (!ata_wait_ready(base_port)) {
+            return -1;
+        }
+    }
+
+    /* Flush drive write cache before reporting success */
+    outb(base_port + 7, ATA_CMD_CACHE_FLUSH);
+    if (!ata_wait_ready(base_port)) {
+        return -1;
+    }
+
+    return count;
+}
+
+/*
  * Read sectors from disk
  */
 int ata_read(int drive_num, uint64_t lba, uint32_t count, void *buffer) {
@@ -298,6 +352,39 @@ int ata_read(int drive_num, uint64_t lba, uint32_t count, void *buffer) {
     }
 
     /* LBA48 would be needed for larger drives - not implemented */
+    return -1;
+}
+
+/*
+ * Write sectors to disk
+ */
+int ata_write(int drive_num, uint64_t lba, uint32_t count, const void *buffer) {
+    if (drive_num < 0 || drive_num > 3) {
+        return -1;
+    }
+
+    struct ata_drive *drive = &drives[drive_num];
+    if (!drive->present) {
+        return -1;
+    }
+
+    if (!buffer || count == 0) {
+        return 0;
+    }
+
+    if (count > 0x7FFFFFFF) {
+        return -1;
+    }
+
+    if (lba > drive->sectors || count > drive->sectors - lba) {
+        return -1;
+    }
+
+    /* LBA28 only (supports sectors 0 through 0x0FFFFFFF) */
+    if (lba < 0x10000000 && count <= 0x10000000 - lba) {
+        return ata_write_lba28(drive, (uint32_t)lba, count, buffer);
+    }
+
     return -1;
 }
 

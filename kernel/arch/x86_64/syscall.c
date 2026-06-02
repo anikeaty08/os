@@ -196,11 +196,23 @@ static int64_t sys_spawn(const char *path) {
 }
 
 static int64_t sys_wait(uint64_t pid, int *status) {
+    int kernel_status = 0;
+    int result;
+
     if (status && !user_range_writable((uint64_t)status, sizeof(*status))) {
         return -1;
     }
 
-    return process_wait(pid, status);
+    result = process_wait(pid, status ? &kernel_status : NULL);
+    if (result < 0) {
+        return result;
+    }
+
+    if (status) {
+        *status = kernel_status;
+    }
+
+    return result;
 }
 
 void syscall_handler(struct interrupt_frame *frame) {

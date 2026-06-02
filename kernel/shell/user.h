@@ -13,6 +13,17 @@
 #define MAX_USERNAME_LEN 32
 #define MAX_PASSWORD_LEN 64
 
+#define USER_RECORDS_PATH "/USERS.TXT"
+#define USER_RECORDS_MAX_BYTES 2048
+
+/*
+ * Persistent user record format, one record per line:
+ * username:password_hash:is_admin:is_active:created_time:last_login
+ *
+ * password_hash is the 16-character hex output from hash_password().
+ * Boolean fields are 0 or 1. Lines beginning with # are ignored.
+ */
+
 typedef struct {
     char username[MAX_USERNAME_LEN];
     char password_hash[MAX_PASSWORD_LEN];  /* Simple hash for now */

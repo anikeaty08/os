@@ -500,6 +500,7 @@ int process_kill(uint64_t pid) {
     struct process *current = process_current();
     if (current && current->pid == pid) {
         process_exit(-1);
+        return 0;
     }
 
     uint64_t flags;
@@ -528,23 +529,30 @@ int process_wait(uint64_t pid, int *status) {
         return -1;
     }
 
-    uint64_t flags;
-    spinlock_acquire_irqsave(&process_lock, &flags);
+    for (;;) {
+        uint64_t flags;
+        spinlock_acquire_irqsave(&process_lock, &flags);
 
-    struct process *proc = process_get(pid);
-    if (!proc || proc->parent != current || proc->state != PROCESS_ZOMBIE) {
+        struct process *proc = process_get(pid);
+        if (!proc || proc->parent != current) {
+            spinlock_release_irqrestore(&process_lock, flags);
+            return -1;
+        }
+
+        if (proc->state == PROCESS_ZOMBIE) {
+            if (status) {
+                *status = proc->exit_code;
+            }
+            proc->wait_observed = true;
+            proc->parent = NULL;
+
+            spinlock_release_irqrestore(&process_lock, flags);
+            return 0;
+        }
+
         spinlock_release_irqrestore(&process_lock, flags);
-        return -1;
+        process_yield();
     }
-
-    if (status) {
-        *status = proc->exit_code;
-    }
-    proc->wait_observed = true;
-    proc->parent = NULL;
-
-    spinlock_release_irqrestore(&process_lock, flags);
-    return 0;
 }
 
 /*

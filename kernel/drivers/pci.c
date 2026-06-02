@@ -36,6 +36,245 @@ uint8_t pci_config_read8(uint8_t bus, uint8_t device, uint8_t function, uint8_t 
     return (uint8_t)((value >> ((offset & 3) * 8)) & 0xFF);
 }
 
+const char *pci_class_name(uint8_t class_code, uint8_t subclass, uint8_t prog_if) {
+    switch (class_code) {
+        case 0x00:
+            if (subclass == 0x00) {
+                return "Unclassified non-VGA device";
+            }
+            if (subclass == 0x01) {
+                return "Unclassified VGA-compatible device";
+            }
+            return "Unclassified device";
+        case 0x01:
+            switch (subclass) {
+                case 0x00:
+                    return "SCSI storage controller";
+                case 0x01:
+                    return "IDE storage controller";
+                case 0x02:
+                    return "Floppy disk controller";
+                case 0x03:
+                    return "IPI storage controller";
+                case 0x04:
+                    return "RAID storage controller";
+                case 0x05:
+                    return "ATA storage controller";
+                case 0x06:
+                    return "SATA storage controller";
+                case 0x07:
+                    return "Serial Attached SCSI controller";
+                case 0x08:
+                    return "Non-Volatile Memory controller";
+                default:
+                    return "Mass storage controller";
+            }
+        case 0x02:
+            switch (subclass) {
+                case 0x00:
+                    return "Ethernet controller";
+                case 0x01:
+                    return "Token Ring controller";
+                case 0x02:
+                    return "FDDI controller";
+                case 0x03:
+                    return "ATM controller";
+                case 0x04:
+                    return "ISDN controller";
+                case 0x05:
+                    return "WorldFip controller";
+                case 0x06:
+                    return "PICMG controller";
+                case 0x07:
+                    return "InfiniBand controller";
+                case 0x08:
+                    return "Fabric controller";
+                default:
+                    return "Network controller";
+            }
+        case 0x03:
+            switch (subclass) {
+                case 0x00:
+                    if (prog_if == 0x01) {
+                        return "8514-compatible display controller";
+                    }
+                    return "VGA-compatible display controller";
+                case 0x01:
+                    return "XGA display controller";
+                case 0x02:
+                    return "3D display controller";
+                default:
+                    return "Display controller";
+            }
+        case 0x04:
+            switch (subclass) {
+                case 0x00:
+                    return "Video device";
+                case 0x01:
+                    return "Audio device";
+                case 0x02:
+                    return "Computer telephony device";
+                case 0x03:
+                    return "High Definition Audio controller";
+                default:
+                    return "Multimedia controller";
+            }
+        case 0x05:
+            switch (subclass) {
+                case 0x00:
+                    return "RAM memory controller";
+                case 0x01:
+                    return "Flash memory controller";
+                default:
+                    return "Memory controller";
+            }
+        case 0x06:
+            switch (subclass) {
+                case 0x00:
+                    return "Host bridge";
+                case 0x01:
+                    return "ISA bridge";
+                case 0x02:
+                    return "EISA bridge";
+                case 0x03:
+                    return "MCA bridge";
+                case 0x04:
+                    return "PCI-to-PCI bridge";
+                case 0x05:
+                    return "PCMCIA bridge";
+                case 0x06:
+                    return "NuBus bridge";
+                case 0x07:
+                    return "CardBus bridge";
+                case 0x08:
+                    return "RACEway bridge";
+                case 0x09:
+                    return "PCI-to-PCI semi-transparent bridge";
+                case 0x0A:
+                    return "InfiniBand-to-PCI host bridge";
+                default:
+                    return "Bridge device";
+            }
+        case 0x07:
+            switch (subclass) {
+                case 0x00:
+                    return "Serial controller";
+                case 0x01:
+                    return "Parallel controller";
+                case 0x02:
+                    return "Multiport serial controller";
+                case 0x03:
+                    return "Modem";
+                case 0x04:
+                    return "IEEE 488 controller";
+                case 0x05:
+                    return "Smart card controller";
+                default:
+                    return "Communication controller";
+            }
+        case 0x08:
+            switch (subclass) {
+                case 0x00:
+                    return "Programmable interrupt controller";
+                case 0x01:
+                    return "DMA controller";
+                case 0x02:
+                    return "Timer";
+                case 0x03:
+                    return "RTC controller";
+                case 0x04:
+                    return "PCI hot-plug controller";
+                case 0x05:
+                    return "SD host controller";
+                case 0x06:
+                    return "IOMMU";
+                default:
+                    return "System peripheral";
+            }
+        case 0x09:
+            switch (subclass) {
+                case 0x00:
+                    return "Keyboard controller";
+                case 0x01:
+                    return "Digitizer pen";
+                case 0x02:
+                    return "Mouse controller";
+                case 0x03:
+                    return "Scanner controller";
+                case 0x04:
+                    return "Gameport controller";
+                default:
+                    return "Input device controller";
+            }
+        case 0x0A:
+            return "Docking station";
+        case 0x0B:
+            switch (subclass) {
+                case 0x00:
+                    return "386 processor";
+                case 0x01:
+                    return "486 processor";
+                case 0x02:
+                    return "Pentium processor";
+                case 0x10:
+                    return "Alpha processor";
+                case 0x20:
+                    return "PowerPC processor";
+                case 0x30:
+                    return "MIPS processor";
+                case 0x40:
+                    return "Co-processor";
+                default:
+                    return "Processor";
+            }
+        case 0x0C:
+            switch (subclass) {
+                case 0x00:
+                    return "FireWire controller";
+                case 0x01:
+                    return "ACCESS.bus controller";
+                case 0x02:
+                    return "SSA controller";
+                case 0x03:
+                    return "USB controller";
+                case 0x04:
+                    return "Fibre Channel controller";
+                case 0x05:
+                    return "SMBus controller";
+                case 0x06:
+                    return "InfiniBand controller";
+                case 0x07:
+                    return "IPMI interface";
+                case 0x08:
+                    return "SERCOS interface";
+                case 0x09:
+                    return "CANbus controller";
+                default:
+                    return "Serial bus controller";
+            }
+        case 0x0D:
+            return "Wireless controller";
+        case 0x0E:
+            return "Intelligent controller";
+        case 0x0F:
+            return "Satellite communication controller";
+        case 0x10:
+            return "Encryption controller";
+        case 0x11:
+            return "Signal processing controller";
+        case 0x12:
+            return "Processing accelerator";
+        case 0x13:
+            return "Non-essential instrumentation";
+        case 0x40:
+            return "Co-processor";
+        case 0xFF:
+            return "Unassigned class";
+        default:
+            return "Unknown PCI class";
+    }
+}
+
 static void pci_print_hex_digit(uint8_t value) {
     static const char hex[] = "0123456789ABCDEF";
     serial_putchar(hex[value & 0x0F]);
@@ -68,6 +307,9 @@ static void pci_print_device(const struct pci_device *dev) {
     pci_print_hex8(dev->subclass);
     serial_puts(" prog_if=0x");
     pci_print_hex8(dev->prog_if);
+    serial_puts(" name=\"");
+    serial_puts(pci_class_name(dev->class_code, dev->subclass, dev->prog_if));
+    serial_putchar('"');
     serial_puts("\n");
 }
 
