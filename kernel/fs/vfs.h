@@ -1,6 +1,6 @@
 /*
  * AstraOS - Virtual File System Header
- * Abstract filesystem interface (READ-ONLY)
+ * Abstract filesystem interface
  */
 
 #ifndef _ASTRA_FS_VFS_H
@@ -61,6 +61,7 @@ typedef int (*read_fn)(struct vfs_node *node, uint64_t offset, size_t size, uint
 typedef int (*write_fn)(struct vfs_node *node, uint64_t offset, size_t size, const uint8_t *buffer);
 typedef struct dirent *(*readdir_fn)(struct vfs_node *node, uint32_t index);
 typedef struct vfs_node *(*finddir_fn)(struct vfs_node *node, const char *name);
+typedef struct vfs_node *(*create_fn)(struct vfs_node *parent, const char *name, uint32_t uid);
 typedef int (*open_fn)(struct vfs_node *node);
 typedef int (*close_fn)(struct vfs_node *node);
 
@@ -76,12 +77,15 @@ struct vfs_node {
     uint64_t size;              /* File size in bytes */
     uint64_t inode;             /* Inode number */
     uint64_t impl;              /* Implementation-specific data */
+    uint64_t meta_lba;          /* Metadata sector location */
+    uint32_t meta_offset;       /* Metadata offset within sector */
 
     /* File operations */
     read_fn read;
     write_fn write;
     readdir_fn readdir;
     finddir_fn finddir;
+    create_fn create;
     open_fn open;
     close_fn close;
 
@@ -122,6 +126,9 @@ struct vfs_node *vfs_get_root(void);
 
 /* Open file by path */
 struct vfs_node *vfs_open(const char *path);
+
+/* Create a regular file by path */
+struct vfs_node *vfs_create(const char *path, uint32_t uid);
 
 /* Close file */
 void vfs_close(struct vfs_node *node);

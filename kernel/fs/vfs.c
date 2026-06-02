@@ -124,6 +124,38 @@ struct vfs_node *vfs_open(const char *path) {
 }
 
 /*
+ * Create a regular file
+ */
+struct vfs_node *vfs_create(const char *path, uint32_t uid) {
+    if (!path || !vfs_root) return NULL;
+
+    char path_copy[VFS_MAX_PATH];
+    strncpy(path_copy, path, VFS_MAX_PATH - 1);
+    path_copy[VFS_MAX_PATH - 1] = '\0';
+
+    char *last_slash = strrchr(path_copy, '/');
+    char *name = path_copy;
+    struct vfs_node *parent = vfs_root;
+
+    if (last_slash) {
+        name = last_slash + 1;
+        if (last_slash == path_copy) {
+            parent = vfs_root;
+        } else {
+            *last_slash = '\0';
+            parent = vfs_resolve_path(path_copy);
+        }
+    }
+
+    if (!parent || !name || name[0] == '\0') return NULL;
+    if (!vfs_is_directory(parent) || !vfs_can_write(parent)) return NULL;
+    if (vfs_finddir(parent, name)) return NULL;
+    if (!parent->create) return NULL;
+
+    return parent->create(parent, name, uid);
+}
+
+/*
  * Check read permission
  */
 bool vfs_can_read(struct vfs_node *node) {

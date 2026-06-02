@@ -1,9 +1,6 @@
 /*
  * AstraOS - FAT16 File System Implementation
- * READ-ONLY FAT16 driver
- *
- * This driver only supports READ operations.
- * No write, create, delete, or modify operations are implemented.
+ * FAT16 driver with read, bounded write, file creation, and file growth.
  */
 
 #include "fat.h"
@@ -249,11 +246,137 @@ static int fat_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t
 static int fat_write(struct vfs_node *node, uint64_t offset, size_t size, const uint8_t *buffer);
 static struct dirent *fat_readdir(struct vfs_node *node, uint32_t index);
 static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name);
+static struct vfs_node *fat_create(struct vfs_node *parent, const char *name, uint32_t uid);
+
+static int fat_write_sectors(uint32_t lba, uint32_t count, const void *buffer) {
+    if (!g_fat) return -1;
+    if (count == 0) return 0;
+    if (lba >= g_fat->total_sectors) return -1;
+    if (count > g_fat->total_sectors - lba) return -1;
+    return ata_write(g_fat->drive, g_fat->partition_lba + lba, count, buffer);
+}
+
+static bool fat_flush_table(void) {
+    if (!g_fat || !g_fat->fat_table) return false;
+
+    for (uint8_t fat = 0; fat < g_fat->num_fats; fat++) {
+        uint32_t lba = g_fat->fat_start_lba + fat * g_fat->sectors_per_fat;
+        if (fat_write_sectors(lba, g_fat->sectors_per_fat, g_fat->fat_table) < 0) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static uint16_t fat_find_free_cluster(void) {
+    if (!g_fat || !g_fat->fat_table) return FAT16_END_MAX;
+
+    for (uint32_t cluster = 2; cluster < g_fat->total_clusters + 2; cluster++) {
+        if (g_fat->fat_table[cluster] == FAT16_FREE) {
+            return (uint16_t)cluster;
+        }
+    }
+
+    return FAT16_END_MAX;
+}
+
+static bool fat_zero_cluster(uint16_t cluster) {
+    if (!fat_is_valid_data_cluster(cluster)) return false;
+
+    uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
+    uint8_t *zero = kmalloc(cluster_size);
+    if (!zero) return false;
+
+    memset(zero, 0, cluster_size);
+    bool ok = fat_write_sectors(fat_cluster_to_lba(cluster),
+                                g_fat->sectors_per_cluster,
+                                zero) >= 0;
+    kfree(zero);
+    return ok;
+}
+
+static bool fat_allocate_cluster(uint16_t *out_cluster) {
+    uint16_t cluster = fat_find_free_cluster();
+    if (!fat_is_valid_data_cluster(cluster)) return false;
+
+    g_fat->fat_table[cluster] = FAT16_END_MAX;
+    if (!fat_zero_cluster(cluster) || !fat_flush_table()) {
+        g_fat->fat_table[cluster] = FAT16_FREE;
+        fat_flush_table();
+        return false;
+    }
+
+    *out_cluster = cluster;
+    return true;
+}
+
+static bool fat_update_dir_entry(struct vfs_node *node) {
+    if (!node || node->meta_lba == 0) return false;
+
+    uint8_t sector[512];
+    if (fat_read_sectors((uint32_t)node->meta_lba, 1, sector) < 0) {
+        return false;
+    }
+
+    if (node->meta_offset + sizeof(struct fat16_dir_entry) > g_fat->bytes_per_sector) {
+        return false;
+    }
+
+    struct fat16_dir_entry *entry =
+        (struct fat16_dir_entry *)(sector + node->meta_offset);
+    entry->cluster_low = (uint16_t)node->impl;
+    entry->file_size = (uint32_t)node->size;
+
+    return fat_write_sectors((uint32_t)node->meta_lba, 1, sector) >= 0;
+}
+
+static bool fat_make_83_name(const char *name, char out_name[8], char out_ext[3]) {
+    if (!name || !*name) return false;
+
+    memset(out_name, ' ', 8);
+    memset(out_ext, ' ', 3);
+
+    int ni = 0;
+    int ei = 0;
+    bool in_ext = false;
+
+    for (size_t i = 0; name[i]; i++) {
+        char c = name[i];
+        if (c == '.') {
+            if (in_ext) return false;
+            in_ext = true;
+            continue;
+        }
+
+        if (c <= ' ' || c == '/' || c == '\\' || c == ':' ||
+            c == '*' || c == '?' || c == '"' || c == '<' ||
+            c == '>' || c == '|') {
+            return false;
+        }
+
+        if (c >= 'a' && c <= 'z') {
+            c = c - 'a' + 'A';
+        }
+
+        if (!in_ext) {
+            if (ni >= 8) return false;
+            out_name[ni++] = c;
+        } else {
+            if (ei >= 3) return false;
+            out_ext[ei++] = c;
+        }
+    }
+
+    return ni > 0;
+}
 
 /*
  * Create VFS node from directory entry
  */
-static struct vfs_node *fat_create_node(const struct fat16_dir_entry *entry) {
+static struct vfs_node *fat_create_node_at(const struct fat16_dir_entry *entry,
+                                           uint32_t meta_lba,
+                                           uint32_t meta_offset) {
     struct vfs_node *node = fat_alloc_node();
     if (!node) return NULL;
 
@@ -261,7 +384,7 @@ static struct vfs_node *fat_create_node(const struct fat16_dir_entry *entry) {
 
     if (entry->attributes & FAT_ATTR_DIRECTORY) {
         node->flags = VFS_DIRECTORY;
-        node->permissions = VFS_PERM_READ | VFS_PERM_EXEC;
+        node->permissions = VFS_PERM_READ | VFS_PERM_EXEC | VFS_PERM_WRITE;
     } else {
         node->flags = VFS_FILE;
         node->permissions = VFS_PERM_READ | VFS_PERM_EXEC | VFS_PERM_WRITE;
@@ -270,12 +393,15 @@ static struct vfs_node *fat_create_node(const struct fat16_dir_entry *entry) {
     node->size = entry->file_size;
     node->inode = entry->cluster_low;  /* Store starting cluster as inode */
     node->impl = entry->cluster_low;
+    node->meta_lba = meta_lba;
+    node->meta_offset = meta_offset;
 
     /* Set operations */
     node->read = fat_read;
     node->write = fat_write;
     node->readdir = fat_readdir;
     node->finddir = fat_finddir;
+    node->create = fat_create;
 
     return node;
 }
@@ -348,24 +474,69 @@ static int fat_read(struct vfs_node *node, uint64_t offset, size_t size, uint8_t
     return bytes_read;
 }
 
-/*
- * Write within an existing FAT16 file cluster chain.
- *
- * This intentionally does not extend files, allocate clusters, or update
- * directory metadata yet. It only mutates bytes that are already part of an
- * existing file.
- */
 static int fat_write(struct vfs_node *node, uint64_t offset, size_t size, const uint8_t *buffer) {
     if (!node || !buffer || !g_fat) return -1;
     if (node->flags & VFS_DIRECTORY) return -1;
     if (size == 0) return 0;
-    if (offset >= node->size) return 0;
-    if (size > node->size - offset) {
-        size = node->size - offset;
+    if (offset > UINT32_MAX || size > UINT32_MAX - offset) return -1;
+
+    if (offset > node->size) {
+        uint8_t zeroes[128];
+        memset(zeroes, 0, sizeof(zeroes));
+
+        while (node->size < offset) {
+            uint64_t gap = offset - node->size;
+            size_t chunk = sizeof(zeroes);
+            if (chunk > gap) {
+                chunk = (size_t)gap;
+            }
+            if (fat_write(node, node->size, chunk, zeroes) != (int)chunk) {
+                return -1;
+            }
+        }
+    }
+
+    uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
+    uint64_t end_offset = offset + size;
+    uint32_t needed_clusters = (uint32_t)((end_offset + cluster_size - 1) / cluster_size);
+
+    if (needed_clusters > g_fat->total_clusters) return -1;
+
+    if (needed_clusters > 0 && node->impl == 0) {
+        uint16_t first;
+        if (!fat_allocate_cluster(&first)) return -1;
+        node->impl = first;
+        node->inode = first;
     }
 
     uint16_t cluster = (uint16_t)node->impl;
-    uint32_t cluster_size = g_fat->sectors_per_cluster * g_fat->bytes_per_sector;
+    uint16_t last_cluster = 0;
+    uint32_t current_clusters = 0;
+
+    while (current_clusters < needed_clusters) {
+        if (!fat_is_valid_data_cluster(cluster)) return -1;
+        last_cluster = cluster;
+        current_clusters++;
+
+        if (current_clusters == needed_clusters) {
+            break;
+        }
+
+        uint16_t next = fat_get_next_cluster(cluster);
+        if (fat_is_end_cluster(next)) {
+            uint16_t allocated;
+            if (!fat_allocate_cluster(&allocated)) return -1;
+            g_fat->fat_table[cluster] = allocated;
+            g_fat->fat_table[allocated] = FAT16_END_MAX;
+            if (!fat_flush_table()) return -1;
+            next = allocated;
+        }
+        cluster = next;
+    }
+
+    (void)last_cluster;
+
+    cluster = (uint16_t)node->impl;
     uint32_t bytes_written = 0;
     uint32_t traversed = 0;
 
@@ -412,6 +583,14 @@ static int fat_write(struct vfs_node *node, uint64_t offset, size_t size, const 
         offset = 0;
         cluster = fat_get_next_cluster(cluster);
         traversed++;
+    }
+
+    if (end_offset > node->size) {
+        node->size = end_offset;
+        if (!fat_update_dir_entry(node)) {
+            kfree(cluster_buf);
+            return -1;
+        }
     }
 
     kfree(cluster_buf);
@@ -568,7 +747,10 @@ static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name) {
                 if (fat_should_skip_entry(entry)) continue;
 
                 if (fat_name_match(entry, name)) {
-                    struct vfs_node *found = fat_create_node(entry);
+                    struct vfs_node *found = fat_create_node_at(
+                        entry,
+                        g_fat->root_dir_start_lba + i,
+                        j * sizeof(struct fat16_dir_entry));
                     kfree(sector_buf);
                     return found;
                 }
@@ -617,7 +799,10 @@ static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name) {
                 if (fat_should_skip_entry(entry)) continue;
 
                 if (fat_name_match(entry, name)) {
-                    struct vfs_node *found = fat_create_node(entry);
+                    struct vfs_node *found = fat_create_node_at(
+                        entry,
+                        lba,
+                        j * sizeof(struct fat16_dir_entry));
                     kfree(cluster_buf);
                     kfree(sector_buf);
                     return found;
@@ -632,6 +817,114 @@ static struct vfs_node *fat_finddir(struct vfs_node *node, const char *name) {
     }
 
     kfree(sector_buf);
+    return NULL;
+}
+
+static bool fat_directory_slot_is_free(const struct fat16_dir_entry *entry) {
+    return entry->name[0] == 0x00 || (uint8_t)entry->name[0] == 0xE5;
+}
+
+static struct vfs_node *fat_create_in_sector(struct vfs_node *parent,
+                                             const char *name,
+                                             uint32_t uid,
+                                             uint32_t lba,
+                                             uint32_t slot) {
+    (void)parent;
+
+    uint8_t sector[512];
+    if (fat_read_sectors(lba, 1, sector) < 0) {
+        return NULL;
+    }
+
+    uint32_t offset = slot * sizeof(struct fat16_dir_entry);
+    if (offset + sizeof(struct fat16_dir_entry) > g_fat->bytes_per_sector) {
+        return NULL;
+    }
+
+    struct fat16_dir_entry *entry = (struct fat16_dir_entry *)(sector + offset);
+    if (!fat_directory_slot_is_free(entry)) {
+        return NULL;
+    }
+
+    char fat_name[8];
+    char fat_ext[3];
+    if (!fat_make_83_name(name, fat_name, fat_ext)) {
+        return NULL;
+    }
+
+    memset(entry, 0, sizeof(*entry));
+    memcpy(entry->name, fat_name, sizeof(entry->name));
+    memcpy(entry->ext, fat_ext, sizeof(entry->ext));
+    entry->attributes = FAT_ATTR_ARCHIVE;
+    entry->cluster_low = 0;
+    entry->file_size = 0;
+
+    if (fat_write_sectors(lba, 1, sector) < 0) {
+        return NULL;
+    }
+
+    struct vfs_node *node = fat_create_node_at(entry, lba, offset);
+    if (node) {
+        node->uid = uid;
+    }
+
+    return node;
+}
+
+static struct vfs_node *fat_create(struct vfs_node *parent, const char *name, uint32_t uid) {
+    if (!parent || !name || !g_fat) return NULL;
+    if (!(parent->flags & VFS_DIRECTORY)) return NULL;
+    if (fat_finddir(parent, name)) return NULL;
+
+    uint32_t entries_per_sector =
+        g_fat->bytes_per_sector / sizeof(struct fat16_dir_entry);
+
+    if (parent->impl == 0) {
+        for (uint32_t i = 0; i < g_fat->root_dir_sectors; i++) {
+            uint8_t sector[512];
+            uint32_t lba = g_fat->root_dir_start_lba + i;
+            if (fat_read_sectors(lba, 1, sector) < 0) {
+                return NULL;
+            }
+
+            struct fat16_dir_entry *entries = (struct fat16_dir_entry *)sector;
+            for (uint32_t slot = 0; slot < entries_per_sector; slot++) {
+                if (fat_directory_slot_is_free(&entries[slot])) {
+                    return fat_create_in_sector(parent, name, uid, lba, slot);
+                }
+            }
+        }
+        return NULL;
+    }
+
+    uint16_t cluster = (uint16_t)parent->impl;
+    uint32_t traversed = 0;
+
+    while (!fat_is_end_cluster(cluster)) {
+        if (!fat_is_valid_data_cluster(cluster) || traversed >= g_fat->total_clusters) {
+            return NULL;
+        }
+
+        uint32_t base_lba = fat_cluster_to_lba(cluster);
+        for (uint32_t sector = 0; sector < g_fat->sectors_per_cluster; sector++) {
+            uint8_t sector_buf[512];
+            uint32_t lba = base_lba + sector;
+            if (fat_read_sectors(lba, 1, sector_buf) < 0) {
+                return NULL;
+            }
+
+            struct fat16_dir_entry *entries = (struct fat16_dir_entry *)sector_buf;
+            for (uint32_t slot = 0; slot < entries_per_sector; slot++) {
+                if (fat_directory_slot_is_free(&entries[slot])) {
+                    return fat_create_in_sector(parent, name, uid, lba, slot);
+                }
+            }
+        }
+
+        cluster = fat_get_next_cluster(cluster);
+        traversed++;
+    }
+
     return NULL;
 }
 
@@ -720,11 +1013,12 @@ struct vfs_node *fat16_init(int drive, uint32_t partition_lba) {
 
     strcpy(root->name, "/");
     root->flags = VFS_DIRECTORY;
-    root->permissions = VFS_PERM_READ | VFS_PERM_EXEC;
+    root->permissions = VFS_PERM_READ | VFS_PERM_EXEC | VFS_PERM_WRITE;
     root->impl = 0;  /* Root directory has no cluster */
     root->read = fat_read;
     root->readdir = fat_readdir;
     root->finddir = fat_finddir;
+    root->create = fat_create;
 
     kprintf("FAT16: Mounted drive %d (%u clusters, %u bytes/cluster)\n",
             drive, g_fat->total_clusters,

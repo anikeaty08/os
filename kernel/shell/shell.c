@@ -105,6 +105,8 @@ void shell_execute(const char *line) {
         cmd_ls(argc, argv);
     } else if (strcmp(cmd, "cat") == 0 || strcmp(cmd, "type") == 0) {
         cmd_cat(argc, argv);
+    } else if (strcmp(cmd, "touch") == 0) {
+        cmd_touch(argc, argv);
     } else if (strcmp(cmd, "write") == 0) {
         cmd_write(argc, argv);
     } else if (strcmp(cmd, "run") == 0) {

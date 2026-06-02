@@ -23,6 +23,7 @@ enum syscall_number {
     SYS_SPAWN = 7,
     SYS_KILL = 8,
     SYS_WAIT = 9,
+    SYS_CREATE = 10,
 };
 
 void syscall_init(void);

@@ -1,6 +1,6 @@
 /*
  * AstraOS - FAT16 File System Header
- * READ-ONLY FAT16 implementation
+ * FAT16 read/write/create implementation
  */
 
 #ifndef _ASTRA_FS_FAT_H

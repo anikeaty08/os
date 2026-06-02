@@ -76,7 +76,8 @@ void cmd_help(int argc, char **argv) {
     kprintf("  %sview%s      - View file with syntax highlighting\n", theme->accent2, ANSI_RESET);
     kprintf("  %sls%s        - List directory\n", theme->accent2, ANSI_RESET);
     kprintf("  %scat%s       - Display file\n", theme->accent2, ANSI_RESET);
-    kprintf("  %swrite%s     - Overwrite bytes in an existing file\n", theme->accent2, ANSI_RESET);
+    kprintf("  %stouch%s     - Create an empty file\n", theme->accent2, ANSI_RESET);
+    kprintf("  %swrite%s     - Create/grow and write file bytes\n", theme->accent2, ANSI_RESET);
     kprintf("  %srun%s       - Run ELF64 or flat user binary\n", theme->accent2, ANSI_RESET);
     
     kprintf("\n%sCustomization:%s\n", theme->info, ANSI_RESET);
@@ -358,6 +359,27 @@ void cmd_cat(int argc, char **argv) {
     vfs_close(node);
 }
 
+void cmd_touch(int argc, char **argv) {
+    if (argc < 2) {
+        kprintf("Usage: touch <filename>\n");
+        return;
+    }
+
+    struct vfs_node *existing = vfs_open(argv[1]);
+    if (existing) {
+        vfs_close(existing);
+        return;
+    }
+
+    struct vfs_node *node = vfs_create(argv[1], user_get_current_uid());
+    if (!node) {
+        kprintf("touch: failed to create %s\n", argv[1]);
+        return;
+    }
+
+    kprintf("touch: created %s\n", argv[1]);
+}
+
 /*
  * write - Overwrite bytes in an existing file
  */
@@ -380,8 +402,11 @@ void cmd_write(int argc, char **argv) {
 
     struct vfs_node *node = vfs_open(argv[1]);
     if (!node) {
-        kprintf("write: %s: No such file or directory\n", argv[1]);
-        return;
+        node = vfs_create(argv[1], user_get_current_uid());
+        if (!node) {
+            kprintf("write: %s: create failed\n", argv[1]);
+            return;
+        }
     }
 
     if (vfs_is_directory(node)) {
@@ -392,12 +417,6 @@ void cmd_write(int argc, char **argv) {
 
     if (!vfs_can_write_as(node, user_get_current_uid(), user_is_admin())) {
         kprintf("write: %s: Permission denied\n", argv[1]);
-        vfs_close(node);
-        return;
-    }
-
-    if (offset >= vfs_size(node)) {
-        kprintf("write: offset beyond end of file\n");
         vfs_close(node);
         return;
     }

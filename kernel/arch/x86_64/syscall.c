@@ -152,6 +152,28 @@ static int64_t sys_close(uint64_t fd) {
     return process_fd_close(current, (int)fd);
 }
 
+static int64_t sys_create(const char *path) {
+    char kernel_path[USER_PATH_MAX];
+
+    if (copy_user_string((uint64_t)path, kernel_path, sizeof(kernel_path)) < 0) {
+        return -1;
+    }
+
+    struct process *current = process_current();
+    struct vfs_node *node = vfs_create(kernel_path, current ? current->uid : 0);
+    if (!node || vfs_is_directory(node)) {
+        return -1;
+    }
+
+    int fd = process_fd_open(current, node);
+    if (fd < 0) {
+        vfs_close(node);
+        return -1;
+    }
+
+    return fd;
+}
+
 static int64_t sys_spawn(const char *path) {
     char kernel_path[USER_PATH_MAX];
 
@@ -268,6 +290,10 @@ void syscall_handler(struct interrupt_frame *frame) {
 
         case SYS_CLOSE:
             result = sys_close(frame->rdi);
+            break;
+
+        case SYS_CREATE:
+            result = sys_create((const char *)frame->rdi);
             break;
 
         case SYS_SPAWN:
