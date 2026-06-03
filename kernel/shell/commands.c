@@ -400,6 +400,7 @@ void cmd_usb(int argc, char **argv) {
     (void)argv;
 
     int controllers = usb_controller_count();
+    int devices = usb_device_count();
     kprintf("\nUSB controllers: %d\n", controllers);
     for (int i = 0; i < controllers; i++) {
         int ports = usb_port_count(i);
@@ -413,6 +414,16 @@ void cmd_usb(int argc, char **argv) {
     }
     if (controllers == 0) {
         kprintf("  No usable UHCI controller detected.\n");
+    }
+    kprintf("USB devices: %d\n", devices);
+    for (int i = 0; i < devices; i++) {
+        kprintf("  dev%d: %s vid=%x pid=%x hid=%s mass=%s\n",
+                i,
+                usb_device_class_name(i),
+                usb_device_vendor(i),
+                usb_device_product(i),
+                usb_device_is_hid(i) ? "ready" : "no",
+                usb_device_is_mass_storage(i) ? "ready" : "no");
     }
     kprintf("\n");
 }

@@ -295,7 +295,9 @@ static void draw_drivers(void) {
     text_px(x + 12, y + 128, "USB", GUI_TEXT, GUI_PANEL);
     if (usb_controller_count() > 0) {
         char buf[48];
-        ksnprintf(buf, sizeof(buf), "%u UHCI controller(s)", (uint32_t)usb_controller_count());
+        ksnprintf(buf, sizeof(buf), "%u ctrl %u dev",
+                  (uint32_t)usb_controller_count(),
+                  (uint32_t)usb_device_count());
         text_px(x + 120, y + 128, buf, GUI_OK, GUI_PANEL);
     } else {
         text_px(x + 120, y + 128, summary.usb_matches ? "detected" : "not found",
