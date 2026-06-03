@@ -133,6 +133,8 @@ void shell_execute(const char *line) {
         cmd_gui(argc, argv);
     } else if (strcmp(cmd, "net") == 0 || strcmp(cmd, "ifconfig") == 0) {
         cmd_net(argc, argv);
+    } else if (strcmp(cmd, "usb") == 0) {
+        cmd_usb(argc, argv);
     } else if (strcmp(cmd, "theme") == 0) {
         cmd_theme(argc, argv);
     } else if (strcmp(cmd, "explore") == 0) {

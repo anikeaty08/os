@@ -5,6 +5,8 @@
 #ifndef _ASTRA_DRIVERS_USB_H
 #define _ASTRA_DRIVERS_USB_H
 
+#include <stdbool.h>
+#include <stdint.h>
 #include "pci.h"
 
 extern const struct pci_driver uhci_pci_driver;
@@ -22,5 +24,9 @@ int uhci_probe(const struct pci_device *dev);
 int ohci_probe(const struct pci_device *dev);
 int ehci_probe(const struct pci_device *dev);
 int xhci_probe(const struct pci_device *dev);
+int usb_controller_count(void);
+int usb_port_count(int controller);
+bool usb_port_connected(int controller, int port);
+bool usb_port_enabled(int controller, int port);
 
 #endif /* _ASTRA_DRIVERS_USB_H */

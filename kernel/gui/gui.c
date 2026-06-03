@@ -12,6 +12,7 @@
 #include "../drivers/nvme.h"
 #include "../drivers/pci.h"
 #include "../drivers/pit.h"
+#include "../drivers/usb.h"
 #include "../fs/vfs.h"
 #include "../lib/stdio.h"
 #include "../lib/string.h"
@@ -292,8 +293,14 @@ static void draw_drivers(void) {
                 summary.nvme_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
     }
     text_px(x + 12, y + 128, "USB", GUI_TEXT, GUI_PANEL);
-    text_px(x + 120, y + 128, summary.usb_matches ? "detected" : "not found",
-            summary.usb_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
+    if (usb_controller_count() > 0) {
+        char buf[48];
+        ksnprintf(buf, sizeof(buf), "%u UHCI controller(s)", (uint32_t)usb_controller_count());
+        text_px(x + 120, y + 128, buf, GUI_OK, GUI_PANEL);
+    } else {
+        text_px(x + 120, y + 128, summary.usb_matches ? "detected" : "not found",
+                summary.usb_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
+    }
     text_px(x + 12, y + 144, "Network", GUI_TEXT, GUI_PANEL);
     if (net_device_count() > 0) {
         char buf[48];
@@ -305,7 +312,7 @@ static void draw_drivers(void) {
     }
 
     text_px(x + 12, y + 178, "AHCI and NVMe expose polling sector read/write.", GUI_OK, GUI_PANEL);
-    text_px(x + 12, y + 194, "RTL8139 network exposes raw Ethernet packet I/O.", GUI_OK, GUI_PANEL);
+    text_px(x + 12, y + 194, "UHCI ports and RTL8139 raw Ethernet are active.", GUI_OK, GUI_PANEL);
 }
 
 static void draw_processes(void) {

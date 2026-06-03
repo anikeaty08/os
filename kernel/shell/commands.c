@@ -18,6 +18,7 @@
 #include "../proc/scheduler.h"
 #include "../drivers/serial.h"
 #include "../drivers/net.h"
+#include "../drivers/usb.h"
 #include "../gui/gui.h"
 #include "user.h"
 
@@ -74,6 +75,7 @@ void cmd_help(int argc, char **argv) {
     kprintf("  %suptime%s    - System uptime\n", theme->accent2, ANSI_RESET);
     kprintf("  %scpuinfo%s   - CPU information\n", theme->accent2, ANSI_RESET);
     kprintf("  %snet%s       - Network device status\n", theme->accent2, ANSI_RESET);
+    kprintf("  %susb%s       - USB controller and port status\n", theme->accent2, ANSI_RESET);
     
     kprintf("\n%sFiles:%s\n", theme->info, ANSI_RESET);
     kprintf("  %sexplore%s   - Browse files (tree view)\n", theme->accent2, ANSI_RESET);
@@ -389,6 +391,28 @@ void cmd_net(int argc, char **argv) {
     }
     if (count == 0) {
         kprintf("  No usable raw Ethernet device detected.\n");
+    }
+    kprintf("\n");
+}
+
+void cmd_usb(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+
+    int controllers = usb_controller_count();
+    kprintf("\nUSB controllers: %d\n", controllers);
+    for (int i = 0; i < controllers; i++) {
+        int ports = usb_port_count(i);
+        kprintf("  usb%d: UHCI ports=%d\n", i, ports);
+        for (int p = 0; p < ports; p++) {
+            kprintf("    port%d: connected=%s enabled=%s\n",
+                    p,
+                    usb_port_connected(i, p) ? "yes" : "no",
+                    usb_port_enabled(i, p) ? "yes" : "no");
+        }
+    }
+    if (controllers == 0) {
+        kprintf("  No usable UHCI controller detected.\n");
     }
     kprintf("\n");
 }
