@@ -44,5 +44,6 @@ void cmd_theme(int argc, char **argv);
 void cmd_explore(int argc, char **argv);
 void cmd_view(int argc, char **argv);
 void cmd_gui(int argc, char **argv);
+void cmd_net(int argc, char **argv);
 
 #endif /* _ASTRA_SHELL_COMMANDS_H */

@@ -131,6 +131,8 @@ void shell_execute(const char *line) {
         cmd_status(argc, argv);
     } else if (strcmp(cmd, "gui") == 0 || strcmp(cmd, "desktop") == 0) {
         cmd_gui(argc, argv);
+    } else if (strcmp(cmd, "net") == 0 || strcmp(cmd, "ifconfig") == 0) {
+        cmd_net(argc, argv);
     } else if (strcmp(cmd, "theme") == 0) {
         cmd_theme(argc, argv);
     } else if (strcmp(cmd, "explore") == 0) {

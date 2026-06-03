@@ -17,6 +17,7 @@
 #include "../proc/process.h"
 #include "../proc/scheduler.h"
 #include "../drivers/serial.h"
+#include "../drivers/net.h"
 #include "../gui/gui.h"
 #include "user.h"
 
@@ -72,6 +73,7 @@ void cmd_help(int argc, char **argv) {
     kprintf("  %smem%s       - Memory usage\n", theme->accent2, ANSI_RESET);
     kprintf("  %suptime%s    - System uptime\n", theme->accent2, ANSI_RESET);
     kprintf("  %scpuinfo%s   - CPU information\n", theme->accent2, ANSI_RESET);
+    kprintf("  %snet%s       - Network device status\n", theme->accent2, ANSI_RESET);
     
     kprintf("\n%sFiles:%s\n", theme->info, ANSI_RESET);
     kprintf("  %sexplore%s   - Browse files (tree view)\n", theme->accent2, ANSI_RESET);
@@ -369,6 +371,26 @@ void cmd_gui(int argc, char **argv) {
     (void)argc;
     (void)argv;
     gui_run();
+}
+
+void cmd_net(int argc, char **argv) {
+    (void)argc;
+    (void)argv;
+
+    int count = net_device_count();
+    kprintf("\nNetwork devices: %d\n", count);
+    for (int i = 0; i < count; i++) {
+        const uint8_t *mac = net_get_mac(i);
+        if (!mac) {
+            continue;
+        }
+        kprintf("  net%d: RTL8139 raw Ethernet  mac=%x:%x:%x:%x:%x:%x\n",
+                i, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    }
+    if (count == 0) {
+        kprintf("  No usable raw Ethernet device detected.\n");
+    }
+    kprintf("\n");
 }
 
 void cmd_touch(int argc, char **argv) {
