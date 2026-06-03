@@ -28,6 +28,7 @@
 #include "drivers/pci.h"
 #include "drivers/ata.h"
 #include "drivers/ahci.h"
+#include "drivers/nvme.h"
 #include "drivers/acpi.h"
 #include "fs/vfs.h"
 #include "fs/fat.h"
@@ -751,8 +752,8 @@ void kmain(void) {
     serial_puts("Detecting FAT16 filesystem... ");
     struct vfs_node *fs_root = NULL;
 
-    /* Try legacy ATA drives first, then AHCI disks exposed through the sector API. */
-    for (int i = 0; i < 4 + ahci_drive_count(); i++) {
+    /* Try legacy ATA drives first, then AHCI/NVMe disks exposed through the sector API. */
+    for (int i = 0; i < 4 + ahci_drive_count() + nvme_drive_count(); i++) {
         if (ata_drive_present(i)) {
             fs_root = fat16_init(i, 0);  /* Try partition at LBA 0 */
             if (fs_root) {

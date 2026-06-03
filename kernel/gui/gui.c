@@ -8,6 +8,7 @@
 #include "../drivers/acpi.h"
 #include "../drivers/ahci.h"
 #include "../drivers/graphics.h"
+#include "../drivers/nvme.h"
 #include "../drivers/pci.h"
 #include "../drivers/pit.h"
 #include "../fs/vfs.h"
@@ -281,8 +282,14 @@ static void draw_drivers(void) {
                 summary.ahci_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
     }
     text_px(x + 12, y + 112, "NVMe", GUI_TEXT, GUI_PANEL);
-    text_px(x + 120, y + 112, summary.nvme_matches ? "detected" : "not found",
-            summary.nvme_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
+    if (nvme_drive_count() > 0) {
+        char buf[48];
+        ksnprintf(buf, sizeof(buf), "%u usable namespace(s)", (uint32_t)nvme_drive_count());
+        text_px(x + 120, y + 112, buf, GUI_OK, GUI_PANEL);
+    } else {
+        text_px(x + 120, y + 112, summary.nvme_matches ? "detected" : "not found",
+                summary.nvme_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
+    }
     text_px(x + 12, y + 128, "USB", GUI_TEXT, GUI_PANEL);
     text_px(x + 120, y + 128, summary.usb_matches ? "detected" : "not found",
             summary.usb_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
@@ -290,8 +297,8 @@ static void draw_drivers(void) {
     text_px(x + 120, y + 144, summary.net_matches ? "detected" : "not found",
             summary.net_matches ? GUI_WARN : GUI_MUTED, GUI_PANEL);
 
-    text_px(x + 12, y + 178, "AHCI SATA exposes polling sector read/write.", GUI_OK, GUI_PANEL);
-    text_px(x + 12, y + 194, "NVMe, USB, and network remain probe-only.", GUI_WARN, GUI_PANEL);
+    text_px(x + 12, y + 178, "AHCI and NVMe expose polling sector read/write.", GUI_OK, GUI_PANEL);
+    text_px(x + 12, y + 194, "USB and network remain probe-only.", GUI_WARN, GUI_PANEL);
 }
 
 static void draw_processes(void) {

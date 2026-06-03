@@ -74,7 +74,7 @@ struct hba_mem {
     uint8_t reserved[0xA0 - 0x2C];
     uint8_t vendor[0x100 - 0xA0];
     struct hba_port ports[32];
-} __attribute__((packed));
+};
 
 struct hba_cmd_header {
     uint8_t cfl;
@@ -84,21 +84,21 @@ struct hba_cmd_header {
     uint32_t ctba;
     uint32_t ctbau;
     uint32_t reserved[4];
-} __attribute__((packed));
+};
 
 struct hba_prdt_entry {
     uint32_t dba;
     uint32_t dbau;
     uint32_t reserved;
     uint32_t dbc_i;
-} __attribute__((packed));
+};
 
 struct hba_cmd_table {
     uint8_t cfis[64];
     uint8_t acmd[16];
     uint8_t reserved[48];
     struct hba_prdt_entry prdt[1];
-} __attribute__((packed));
+};
 
 struct ahci_drive {
     bool present;
